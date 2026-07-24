@@ -12,9 +12,6 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 NAVER_DIR = ROOT / "data" / "naver_top10"
 APP_SEARCH_DIR = ROOT / "data" / "app_search"
-AD_REF_DIR = ROOT / "data" / "ad_reference"
-AD_REF_IMG_DIR = AD_REF_DIR / "images"
-AD_REF_CSV = AD_REF_DIR / "ad_reference.csv"
 COMPETITOR_DIR = ROOT / "data" / "competitor_monitor"
 COMPETITOR_IMG_DIR = COMPETITOR_DIR / "images"
 COMPETITOR_CSV = COMPETITOR_DIR / "competitor_monitor.csv"
@@ -24,7 +21,7 @@ APP_SEARCH_SCRAPER_SCRIPT = ROOT / "scraper" / "app_search_scraper.py"
 APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
-NAV_ITEMS = ["이번 주 인기 검색어", "광고 소재 레퍼런스", "경쟁사 모니터링"]
+NAV_ITEMS = ["이번 주 인기 검색어", "경쟁사 모니터링"]
 
 st.set_page_config(
     page_title="바바더닷컴 패션 트렌드 대시보드",
@@ -95,29 +92,11 @@ def inject_style():
 
         .section-desc { color: #71717A; font-size: 14px; margin-bottom: 1.25rem; }
 
-        .tag-pill {
-            display: inline-block; background: #F4F4F5; color: #52525B;
-            font-size: 11.5px; font-weight: 500; padding: 3px 9px; border-radius: 999px;
-            margin: 0 4px 4px 0;
-        }
-
-        .ref-card {
-            background: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 14px;
-            padding: 14px; margin-bottom: 14px;
-        }
-        .ref-card .title { font-weight: 600; font-size: 14px; color: #18181B; margin: 8px 0 4px; }
-        .ref-card .meta { font-size: 11.5px; color: #A1A1AA; }
-
         .brand-block {
             border: 1px solid #E4E4E7; border-radius: 16px; padding: 18px 20px 8px;
             margin-bottom: 18px; background: #FFFFFF;
         }
         .brand-block .brand-title { font-weight: 700; font-size: 15px; color: #18181B; margin-bottom: 12px; }
-        .slot-label { font-size: 12px; color: #9CA3AF; margin-top: 6px; text-align: center; }
-        .slot-empty {
-            aspect-ratio: 3/4; background: #FAFAFA; border: 1px dashed #D4D4D8; border-radius: 10px;
-            display: flex; align-items: center; justify-content: center; color: #BDBDC2; font-size: 12px;
-        }
 
         /* 랭킹 카드 (이번 주 인기 검색어) */
         .rank-card {
@@ -145,6 +124,12 @@ def inject_style():
         .rank-item .num { width: 18px; text-align: center; font-weight: 700; color: #A1A1AA; font-size: 13px; }
         .rank-item.top .num { color: #2563EB; }
         .rank-item .kw { color: #27272A; }
+
+        .media-empty {
+            aspect-ratio: 4/3; background: #FAFAFA; border: 1px dashed #D4D4D8; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; color: #BDBDC2; font-size: 13px;
+        }
+        .group-label { font-size: 13px; font-weight: 700; color: #52525B; margin: 4px 0 10px; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -243,6 +228,16 @@ def run_naver_scraper() -> tuple[bool, str]:
     return ok, log
 
 
+def run_app_search_scraper() -> tuple[bool, str]:
+    result = subprocess.run(
+        [sys.executable, str(APP_SEARCH_SCRAPER_SCRIPT)],
+        capture_output=True, text=True, timeout=120,
+    )
+    ok = result.returncode == 0
+    log = (result.stdout or "") + (result.stderr or "")
+    return ok, log
+
+
 def section_naver():
     st.markdown("#### 네이버 데이터랩")
     st.markdown(
@@ -300,30 +295,44 @@ def section_naver():
             st.caption("이 카테고리는 아직 날짜별 이력이 1건뿐이라 추이를 볼 수 없습니다.")
 
 
-def latest_channel_df(channel: str, dates: list[date]) -> tuple[pd.DataFrame | None, date | None]:
+def latest_channel_df(channel: str, dates: list[date]) -> tuple[pd.DataFrame | None, date | None, str | None]:
     for d in dates:
         day_df = pd.read_csv(APP_SEARCH_DIR / f"{d.isoformat()}.csv", encoding="utf-8-sig")
         sub = day_df[day_df["channel"] == channel]
         if not sub.empty:
-            return sub[["rank", "keyword"]], d
-    return None, None
+            input_by = sub.iloc[0].get("input_by")
+            return sub[["rank", "keyword"]], d, input_by
+    return None, None, None
 
 
 def section_app_search():
     st.markdown("#### 앱 실시간 검색어")
     st.markdown(
-        '<div class="section-desc">공식 API·자동 수집이 불가능해(robots.txt 차단, 앱 전용) 사용자가 앱을 직접 보고 입력합니다. '
+        '<div class="section-desc">각 사이트 검색창을 열면 나오는 인기/급상승 검색어를 자동 캡처합니다 '
+        "(더한섬닷컴·W컨셉은 robots.txt가 일반 크롤러를 막고 있어 저빈도로만 실행). "
         "검색량 수치는 제공되지 않아 순위만 기록합니다.</div>",
         unsafe_allow_html=True,
     )
 
+    col1, _ = st.columns([1, 3])
+    with col1:
+        if st.button("새로고침 (4개 브랜드 검색어 1회 캡처)"):
+            with st.spinner("각 사이트 검색창을 열어 인기 검색어 확인 중..."):
+                ok, log = run_app_search_scraper()
+            if ok:
+                st.success("수집 완료")
+            else:
+                st.error("일부 브랜드 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
+                st.code(log)
+
     hist_dates = load_app_search_dates()
     cols = st.columns(len(APP_CHANNELS))
     for channel, col in zip(APP_CHANNELS, cols):
-        df_latest, d = latest_channel_df(channel, hist_dates)
-        meta = f"실시간 검색어 · {d.isoformat()} 입력" if d else "실시간 검색어 (수동 입력)"
+        df_latest, d, input_by = latest_channel_df(channel, hist_dates)
+        source_label = "수동 입력" if input_by == "user" else "자동 캡처" if input_by == "auto" else "수동 입력"
+        meta = f"{source_label} · {d.isoformat()}" if d else "아직 데이터 없음"
         with col:
-            render_rank_card(channel, meta, df_latest, empty_msg="아직 입력된 데이터가 없습니다. 아래에서 입력하세요.")
+            render_rank_card(channel, meta, df_latest, empty_msg="아직 데이터가 없습니다. 새로고침하거나 아래에서 직접 입력하세요.")
 
     st.write("")
     with st.expander("검색어 입력 / 수정"):
@@ -394,96 +403,27 @@ def page_keywords():
 
 
 # ---------------------------------------------------------------------------
-# 광고 소재 레퍼런스
-# ---------------------------------------------------------------------------
-def load_ad_reference() -> pd.DataFrame:
-    if not AD_REF_CSV.exists():
-        return pd.DataFrame(columns=["id", "title", "tags", "image_file", "link", "uploaded_at"])
-    return pd.read_csv(AD_REF_CSV, encoding="utf-8-sig", keep_default_na=False)
-
-
-def save_ad_reference_row(row: dict):
-    AD_REF_DIR.mkdir(parents=True, exist_ok=True)
-    df = load_ad_reference()
-    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    df.to_csv(AD_REF_CSV, index=False, encoding="utf-8-sig")
-
-
-def page_ad_reference():
-    st.markdown("### 광고 소재 레퍼런스")
-    df = load_ad_reference()
-    all_tags = sorted({t for tags in df["tags"].dropna() for t in tags.split(",") if t})
-    stat_row([
-        ("등록된 레퍼런스", f"{len(df)}건"),
-        ("태그 종류", f"{len(all_tags)}개"),
-    ])
-
-    with st.expander("+ 새 레퍼런스 등록", expanded=len(df) == 0):
-        with st.form("ad_reference_form", clear_on_submit=True):
-            title = st.text_input("제목")
-            tags = st.text_input("태그 (쉼표로 구분, 예: 시즌오프·프로모션·레이아웃)")
-            link = st.text_input("참고 링크 (선택)")
-            image = st.file_uploader("이미지 (선택)", type=["png", "jpg", "jpeg", "webp"])
-            submitted = st.form_submit_button("등록")
-        if submitted:
-            if not title.strip():
-                st.error("제목을 입력하세요.")
-            else:
-                image_file = ""
-                if image is not None:
-                    AD_REF_IMG_DIR.mkdir(parents=True, exist_ok=True)
-                    ext = Path(image.name).suffix or ".png"
-                    image_file = f"{uuid.uuid4().hex}{ext}"
-                    (AD_REF_IMG_DIR / image_file).write_bytes(image.getvalue())
-                save_ad_reference_row({
-                    "id": uuid.uuid4().hex[:8],
-                    "title": title.strip(),
-                    "tags": tags.strip(),
-                    "image_file": image_file,
-                    "link": link.strip(),
-                    "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                })
-                st.success("등록 완료")
-                st.rerun()
-
-    df = load_ad_reference()
-    if df.empty:
-        st.info("아직 등록된 레퍼런스가 없습니다. 위에서 첫 레퍼런스를 등록하세요.")
-    else:
-        picked_tags = st.multiselect("태그 필터", all_tags)
-        view = df
-        if picked_tags:
-            view = view[view["tags"].fillna("").apply(lambda t: any(tag in t.split(",") for tag in picked_tags))]
-
-        cols = st.columns(3)
-        for i, (_, row) in enumerate(view[::-1].iterrows()):
-            with cols[i % 3]:
-                st.markdown('<div class="ref-card">', unsafe_allow_html=True)
-                if row.get("image_file") and (AD_REF_IMG_DIR / row["image_file"]).exists():
-                    st.image(str(AD_REF_IMG_DIR / row["image_file"]), use_container_width=True)
-                st.markdown(f'<div class="title">{row["title"]}</div>', unsafe_allow_html=True)
-                if row.get("tags"):
-                    st.markdown(
-                        "".join(f'<span class="tag-pill">{t}</span>' for t in str(row["tags"]).split(",") if t),
-                        unsafe_allow_html=True,
-                    )
-                if row.get("link"):
-                    st.markdown(f'<a href="{row["link"]}" target="_blank">참고 링크 열기</a>', unsafe_allow_html=True)
-                st.markdown(f'<div class="meta">{row["uploaded_at"]}</div>', unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-
-    with st.expander("외부 레퍼런스 링크 (참고용, 자동 수집 아님)"):
-        st.markdown("""
-- [WGSN](https://www.wgsn.com/) — 글로벌 컬러/스타일 트렌드
-- [Pantone Color of the Year](https://www.pantone.com/color-of-the-year) — 시즌 컬러 트렌드
-- [무신사 랭킹](https://www.musinsa.com/ranking) — 국내 패션 판매 랭킹
-- [29CM](https://www.29cm.co.kr/) — 큐레이션 트렌드 상품
-""")
-
-
-# ---------------------------------------------------------------------------
 # 경쟁사 모니터링
 # ---------------------------------------------------------------------------
+def render_media_card(title: str, meta: str, image_path: Path | None, empty_msg: str = "미등록"):
+    import html as html_lib
+
+    st.markdown(
+        f"""<div class="rank-card" style="padding-bottom:16px;">
+            <div class="rank-card-head">
+                <div class="rank-card-title">{html_lib.escape(title)}</div>
+            </div>
+            <div class="rank-card-meta"><span>{html_lib.escape(meta)}</span></div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if image_path and image_path.exists():
+        st.image(str(image_path), use_container_width=True)
+    else:
+        st.markdown(f'<div class="media-empty">{html_lib.escape(empty_msg)}</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def load_competitor() -> pd.DataFrame:
     if not COMPETITOR_CSV.exists():
         return pd.DataFrame(columns=["date", "brand", "slot", "image_file", "uploaded_at"])
@@ -517,16 +457,30 @@ def page_competitor():
 
     for brand in COMPETITOR_BRANDS:
         st.markdown(f'<div class="brand-block"><div class="brand-title">{brand}</div>', unsafe_allow_html=True)
-        cols = st.columns(len(COMPETITOR_SLOTS))
         brand_df = day_df[day_df["brand"] == brand] if not day_df.empty else day_df
-        for slot, col in zip(COMPETITOR_SLOTS, cols):
+
+        def slot_lookup(slot: str) -> tuple[Path | None, str]:
+            match = brand_df[brand_df["slot"] == slot] if not brand_df.empty else brand_df
+            if not match.empty:
+                row = match.iloc[0]
+                p = COMPETITOR_IMG_DIR / row["image_file"]
+                if p.exists():
+                    return p, f"{view_date.isoformat()} 등록"
+            return None, "미등록"
+
+        st.markdown('<div class="group-label">브랜드검색</div>', unsafe_allow_html=True)
+        cols = st.columns(2)
+        for slot, col in zip(["브랜드검색 PC", "브랜드검색 MO"], cols):
             with col:
-                match = brand_df[brand_df["slot"] == slot] if not brand_df.empty else brand_df
-                if not match.empty and (COMPETITOR_IMG_DIR / match.iloc[0]["image_file"]).exists():
-                    st.image(str(COMPETITOR_IMG_DIR / match.iloc[0]["image_file"]), use_container_width=True)
-                else:
-                    st.markdown('<div class="slot-empty">미등록</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="slot-label">{slot}</div>', unsafe_allow_html=True)
+                image_path, meta = slot_lookup(slot)
+                render_media_card(slot, meta, image_path)
+
+        st.markdown('<div class="group-label" style="margin-top:16px;">메타 광고 소재</div>', unsafe_allow_html=True)
+        cols = st.columns(2)
+        for slot, col in zip(["메타소재 1", "메타소재 2"], cols):
+            with col:
+                image_path, meta = slot_lookup(slot)
+                render_media_card(slot, meta, image_path)
 
         with st.expander(f"{brand} 이미지 업로드/교체 — {view_date.isoformat()}"):
             for slot in COMPETITOR_SLOTS:
@@ -570,8 +524,6 @@ def main():
 
     if page == "이번 주 인기 검색어":
         page_keywords()
-    elif page == "광고 소재 레퍼런스":
-        page_ad_reference()
     else:
         page_competitor()
 
