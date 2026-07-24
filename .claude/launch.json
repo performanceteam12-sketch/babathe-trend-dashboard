@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fashion-trend-dashboard",
+      "runtimeExecutable": "C:\\Users\\MADUP\\OneDrive - 매드업\\바탕 화면\\바바더닷컴 트렌드 대시보드\\.venv\\Scripts\\streamlit.exe",
+      "runtimeArgs": ["run", "dashboard/app.py", "--server.headless", "true"],
+      "port": 8501
+    }
+  ]
+}
