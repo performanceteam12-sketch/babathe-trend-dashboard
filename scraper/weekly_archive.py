@@ -24,6 +24,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import competitor_monitor_scraper as cms  # noqa: E402
+import git_sync  # noqa: E402
 
 ARCHIVE_CSV = Path(__file__).resolve().parent.parent / "data" / "competitor_monitor" / "archive_weeks.csv"
 
@@ -76,6 +77,7 @@ def main():
 
     log = cms.run(cms.BRANDS, today)
     record_archive(today, log)
+    git_sync.sync_to_github(f"주간 아카이브: {label} ({today.isoformat()})", log)
 
     for line in log:
         print(line)

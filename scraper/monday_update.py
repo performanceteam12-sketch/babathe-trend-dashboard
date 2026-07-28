@@ -21,6 +21,7 @@ from urllib import request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import competitor_monitor_scraper as cms  # noqa: E402
+import git_sync  # noqa: E402
 
 SECRETS_PATH = Path(__file__).resolve().parent.parent / ".streamlit" / "secrets.toml"
 
@@ -62,6 +63,7 @@ def main():
     print(f"월요일 업데이트 시작: {today.isoformat()}")
 
     log = cms.run(cms.BRANDS, today)
+    git_sync.sync_to_github(f"월요일 업데이트: {today.isoformat()}", log)
     for line in log:
         print(line)
 
