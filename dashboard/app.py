@@ -1,5 +1,6 @@
 """바바더닷컴 패션 트렌드 대시보드. 새 날짜 데이터가 추가되면 새로고침 버튼으로 다시 스캔한다."""
 
+import os
 import subprocess
 import sys
 import uuid
@@ -15,13 +16,16 @@ APP_SEARCH_DIR = ROOT / "data" / "app_search"
 COMPETITOR_DIR = ROOT / "data" / "competitor_monitor"
 COMPETITOR_IMG_DIR = COMPETITOR_DIR / "images"
 COMPETITOR_CSV = COMPETITOR_DIR / "competitor_monitor.csv"
+COMPETITOR_KEYWORDS_CSV = COMPETITOR_DIR / "keywords.csv"
+COMPETITOR_COMMENTS_CSV = COMPETITOR_DIR / "comments.csv"
 SCRAPER_SCRIPT = ROOT / "scraper" / "naver_datalab_scraper.py"
 APP_SEARCH_SCRAPER_SCRIPT = ROOT / "scraper" / "app_search_scraper.py"
+COMPETITOR_SCRAPER_SCRIPT = ROOT / "scraper" / "competitor_monitor_scraper.py"
 
 APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
-NAV_ITEMS = ["이번 주 인기 검색어", "경쟁사 모니터링"]
+NAV_ITEMS = ["실시간 인기 검색어", "경쟁사 모니터링"]
 
 st.set_page_config(
     page_title="바바더닷컴 패션 트렌드 대시보드",
@@ -41,111 +45,261 @@ def inject_style():
 
         html, body, [class*="css"] { font-family: 'Pretendard', -apple-system, sans-serif; }
 
-        .block-container { padding: 2.5rem 3rem 3rem; max-width: 1240px; }
+        /* 앱 배경: 사이드바·카드가 그 위에 떠 있는 느낌을 주는 옅은 라벤더 톤 */
+        [data-testid="stAppViewContainer"] { background: #F4F1FC; }
+        header[data-testid="stHeader"] { background: transparent; }
 
-        h1, h2, h3, h4 { letter-spacing: -0.01em; color: #18181B; }
+        .block-container { padding: 2.25rem 3rem 3rem; max-width: 1240px; }
 
-        /* 사이드바 */
+        h1, h2, h3, h4 { letter-spacing: -0.01em; color: #211B36; }
+
+        /* 사이드바: 앱 배경과 분리된 흰색 라운드 카드처럼 */
         section[data-testid="stSidebar"] {
             background: #FFFFFF;
-            border-right: 1px solid #E4E4E7;
+            border-right: none;
+            margin: 14px 0 14px 14px;
+            border-radius: 22px;
+            box-shadow: 0 4px 24px rgba(124, 58, 237, 0.08);
         }
         section[data-testid="stSidebar"] .block-container { padding: 1.75rem 1rem; }
 
         .brand-mark {
             display: flex; align-items: center; gap: 10px;
-            padding: 0 0.5rem 1.25rem; margin-bottom: 0.5rem;
-            border-bottom: 1px solid #F0F0F1;
+            padding: 0 0.5rem 1.25rem; margin-bottom: 0.75rem;
+            border-bottom: 1px solid #F1EDFB;
         }
         .brand-mark .logo {
-            width: 32px; height: 32px; border-radius: 9px;
-            background: #2563EB; color: white; font-weight: 700;
+            width: 34px; height: 34px; border-radius: 11px;
+            background: linear-gradient(135deg, #8B5CF6, #6D28D9); color: white; font-weight: 700;
             display: flex; align-items: center; justify-content: center;
-            font-size: 15px; flex-shrink: 0;
+            font-size: 16px; flex-shrink: 0;
+            box-shadow: 0 3px 10px rgba(109, 40, 217, 0.3);
         }
-        .brand-mark .name { font-weight: 700; font-size: 15px; color: #18181B; }
-        .brand-mark .sub { font-size: 11px; color: #9CA3AF; margin-top: 1px; }
+        .brand-mark .name { font-weight: 700; font-size: 15px; color: #211B36; }
+        .brand-mark .sub { font-size: 11px; color: #A29BC2; margin-top: 1px; }
 
         /* 네비게이션 라디오 -> 리스트 형태로 재구성 */
         section[data-testid="stSidebar"] div[role="radiogroup"] {
             display: flex; flex-direction: column; gap: 2px; padding: 0 0.5rem;
         }
         section[data-testid="stSidebar"] div[role="radiogroup"] label {
-            padding: 10px 12px; border-radius: 10px; color: #52525B;
+            padding: 11px 12px; border-radius: 12px; color: #6B6483;
             font-weight: 500; font-size: 14px; transition: background .12s ease;
         }
-        section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #F4F4F5; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #F7F4FD; }
         section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-            background: #EFF4FF; color: #2563EB; font-weight: 600;
+            background: linear-gradient(120deg, #8B5CF6, #7C3AED); color: #FFFFFF; font-weight: 600;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.28);
         }
         section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child { display: none; }
+
+        /* 사이드바 내 버튼(주차별 아카이브 토글 + 주차 목록) - 테두리 없는 플랫 서브 네비 스타일 */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+            background: transparent; border: none; box-shadow: none;
+            color: #6B6483; font-weight: 500; font-size: 13px;
+            text-align: left; justify-content: flex-start; padding: 7px 12px;
+            border-radius: 10px; width: 100%;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+            background: #F7F4FD; color: #7C3AED;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button p { font-size: 13px; }
+
+        /* 메인 화면의 액션 버튼(새로고침 등) — 기본 스트림릿 흰색 테두리 박스 대신 퍼플 필 버튼 */
+        section[data-testid="stMain"] div[data-testid="stButton"] button {
+            background: linear-gradient(120deg, #8B5CF6, #7C3AED); color: #FFFFFF; border: none;
+            border-radius: 12px; font-weight: 700; padding: 10px 18px;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+        }
+        section[data-testid="stMain"] div[data-testid="stButton"] button:hover {
+            background: linear-gradient(120deg, #7C3AED, #6D28D9);
+            box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35);
+        }
+        section[data-testid="stMain"] div[data-testid="stButton"] button p { color: #FFFFFF; }
+        section[data-testid="stMain"] div[data-testid="stFormSubmitButton"] button {
+            background: linear-gradient(120deg, #8B5CF6, #7C3AED); color: #FFFFFF; border: none;
+            border-radius: 12px; font-weight: 700; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+        }
+        section[data-testid="stMain"] div[data-testid="stFormSubmitButton"] button p { color: #FFFFFF; }
+
+        /* 페이지 공통 헤더 (제목 + 설명 + 최신 기준일 배지) */
+        .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 1.1rem; }
+        .page-header .titles h3 { margin: 0 0 4px; font-size: 24px; }
+        .page-header .titles .section-desc { margin-bottom: 0; }
+        .page-header .badge {
+            flex-shrink: 0; background: #EDE6FC; color: #7C3AED; font-weight: 700;
+            font-size: 12.5px; padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+            margin-top: 2px;
+        }
 
         /* 공통 카드 */
         .stat-row { display: flex; gap: 14px; margin: 0.25rem 0 1.75rem; flex-wrap: wrap; }
         .stat-card {
-            flex: 1; min-width: 160px; background: #FFFFFF; border: 1px solid #E4E4E7;
-            border-radius: 16px; padding: 18px 20px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            flex: 1; min-width: 170px; border: none;
+            border-radius: 20px; padding: 18px 20px;
+            box-shadow: 0 2px 10px rgba(124, 58, 237, 0.06);
+            display: flex; align-items: center; gap: 14px;
         }
-        .stat-card .label { font-size: 12.5px; color: #9CA3AF; font-weight: 500; }
-        .stat-card .value { font-size: 26px; font-weight: 700; color: #18181B; margin-top: 4px; letter-spacing: -0.02em; }
+        .stat-card .icon-chip {
+            width: 40px; height: 40px; border-radius: 13px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; font-size: 19px;
+            background: rgba(255,255,255,0.55);
+        }
+        .stat-card .label { font-size: 12.5px; color: #6B6483; font-weight: 500; opacity: 0.85; }
+        .stat-card .value { font-size: 28px; font-weight: 700; color: #211B36; margin-top: 4px; letter-spacing: -0.02em; }
+        .stat-card:nth-child(3n+1) { background: #EDE6FC; }
+        .stat-card:nth-child(3n+2) { background: #DDF1FB; }
+        .stat-card:nth-child(3n+3) { background: #FFE9D9; }
 
         .section-desc { color: #71717A; font-size: 14px; margin-bottom: 1.25rem; }
 
-        .brand-block {
-            border: 1px solid #E4E4E7; border-radius: 16px; padding: 18px 20px 8px;
-            margin-bottom: 18px; background: #FFFFFF;
+        /* 브랜드 요약 카드 (경쟁사 모니터링 상단 — 회의 시작할 때 스크롤 없이 한눈에) */
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.75rem; }
+        .summary-card,
+        .summary-card:link,
+        .summary-card:visited,
+        .summary-card:hover,
+        .summary-card * {
+            text-decoration: none !important;
         }
-        .brand-block .brand-title { font-weight: 700; font-size: 15px; color: #18181B; margin-bottom: 12px; }
+        .summary-card {
+            background: #FFFFFF; border-radius: 16px; padding: 14px 16px;
+            box-shadow: 0 2px 10px rgba(124, 58, 237, 0.06); display: block;
+        }
+        .summary-card:hover { box-shadow: 0 4px 16px rgba(124, 58, 237, 0.14); }
+        .summary-card .summary-brand { font-weight: 700; font-size: 14.5px; color: #211B36; margin-bottom: 6px; }
+        .summary-card .summary-comment {
+            font-size: 12.5px; color: #6B6483; line-height: 1.45;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .summary-card .summary-empty { font-size: 12.5px; color: #C2B8E0; }
 
-        /* 랭킹 카드 (이번 주 인기 검색어) */
+        .brand-block {
+            border: none; border-radius: 20px; padding: 18px 20px 8px;
+            margin-bottom: 22px; background: #FFFFFF; overflow: hidden;
+            box-shadow: 0 2px 14px rgba(124, 58, 237, 0.07);
+            scroll-margin-top: 20px;
+        }
+        .brand-header {
+            background: linear-gradient(120deg, #8B5CF6, #6D28D9);
+            margin: -18px -20px 16px; padding: 19px 22px;
+        }
+        .brand-header .brand-title {
+            font-weight: 800; font-size: 22px; color: #FFFFFF; letter-spacing: -0.02em;
+        }
+
+        /* 랭킹 카드 (실시간 인기 검색어) */
         .rank-card {
-            background: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 20px;
-            padding: 20px 22px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            background: #FFFFFF; border: none; border-radius: 22px;
+            padding: 20px 22px 8px; box-shadow: 0 2px 14px rgba(124, 58, 237, 0.07);
         }
         .rank-card-head { display: flex; justify-content: space-between; align-items: flex-start; }
-        .rank-card-title { font-weight: 700; font-size: 16px; color: #18181B; }
+        .rank-card-title { font-weight: 700; font-size: 17px; color: #211B36; }
         .rank-card-badge {
-            background: #EFF4FF; color: #2563EB; font-size: 12px; font-weight: 700;
+            background: #EDE6FC; color: #7C3AED; font-size: 12px; font-weight: 700;
             padding: 3px 11px; border-radius: 999px; flex-shrink: 0;
         }
         .rank-card-meta {
             display: flex; justify-content: space-between; align-items: baseline;
-            font-size: 12px; color: #9CA3AF; margin: 3px 0 12px;
+            font-size: 12px; color: #9992B3; margin: 3px 0 12px;
         }
-        .rank-card-meta a { color: #9CA3AF; text-decoration: none; }
-        .rank-card-meta a:hover { color: #2563EB; }
+        .rank-card-meta a { color: #9992B3; text-decoration: none; }
+        .rank-card-meta a:hover { color: #7C3AED; }
         .rank-list { max-height: 460px; overflow-y: auto; }
         .rank-item {
             display: flex; align-items: center; gap: 12px; padding: 8.5px 2px;
-            border-bottom: 1px solid #F4F4F5; font-size: 14px;
+            border-bottom: 1px solid #F5F2FB; font-size: 14px;
         }
         .rank-item:last-child { border-bottom: none; }
-        .rank-item .num { width: 18px; text-align: center; font-weight: 700; color: #A1A1AA; font-size: 13px; }
-        .rank-item.top .num { color: #2563EB; }
-        .rank-item .kw { color: #27272A; }
+        .rank-item .num { width: 18px; text-align: center; font-weight: 700; color: #B3ABCF; font-size: 13px; }
+        .rank-item.top .num { color: #7C3AED; }
+        .rank-item .kw { color: #2E2748; }
 
         .media-empty {
-            aspect-ratio: 4/3; background: #FAFAFA; border: 1px dashed #D4D4D8; border-radius: 12px;
-            display: flex; align-items: center; justify-content: center; color: #BDBDC2; font-size: 13px;
+            aspect-ratio: 4/3; background: #FAF8FE; border: 1px dashed #DDD3F5; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; color: #C2B8E0; font-size: 13px;
         }
-        .group-label { font-size: 13px; font-weight: 700; color: #52525B; margin: 4px 0 10px; }
+        /* 미디어 카드: 기존 경쟁사 동향 시트의 "이미지 아래 회색 캡션 바" 레이아웃 재현 */
+        .rank-card.media-card { padding: 14px 14px 0; }
+        .media-caption {
+            display: flex; align-items: baseline; justify-content: center; gap: 8px;
+            background: #F5F2FB; border-radius: 0 0 12px 12px; margin: 10px -14px -14px;
+            padding: 9px 10px; text-align: center;
+        }
+        .media-caption-title { font-weight: 700; font-size: 13px; color: #4C4569; }
+        .media-caption-meta { font-size: 11.5px; color: #9992B3; }
+
+        /* 서브섹션 라벨(브랜드검색/메타 광고 소재)을 회색 바 형태로 — 기존 시트의 "1-2. 브랜드검색" 행 헤더 느낌 */
+        .group-label {
+            font-size: 13px; font-weight: 700; color: #4C4569; margin: 4px 0 10px;
+            background: #F5F2FB; padding: 8px 14px; border-radius: 10px;
+        }
+        .keyword-pill {
+            display: inline-block; background: #EDE6FC; color: #7C3AED; font-weight: 600;
+            font-size: 12px; padding: 4px 11px; border-radius: 999px; margin: 0 6px 6px 0;
+        }
+        .keyword-empty { color: #C2B8E0; font-size: 13px; }
+
+        .comment-box {
+            background: #FFF8E8; border: 1px solid #FDE9BE; border-radius: 14px;
+            padding: 12px 16px; margin: 10px 0 4px; font-size: 14.5px; color: #7A4E10;
+            line-height: 1.55;
+        }
+        .comment-box .comment-label {
+            display: inline-block; background: #F59E0B; color: #FFFFFF; font-size: 11px;
+            font-weight: 800; padding: 2px 10px; border-radius: 999px; margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        /* 알림/상태 메시지(성공·실패·안내) 테마 통일 — 기본 스트림릿 회색/빨강 배너 대신 퍼플 팔레트 톤 */
+        [data-testid="stAlert"] {
+            border-radius: 14px; border: none; border-left: 4px solid transparent;
+            padding: 12px 16px;
+        }
+        [data-testid="stAlertContainer"]:has(div[data-testid="stNotificationContentSuccess"]) {
+            background: #EAFBF1; border-left-color: #22C55E;
+        }
+        [data-testid="stAlertContainer"]:has(div[data-testid="stNotificationContentError"]) {
+            background: #FDECEC; border-left-color: #EF4444;
+        }
+        [data-testid="stAlertContainer"]:has(div[data-testid="stNotificationContentInfo"]) {
+            background: #EDE6FC; border-left-color: #7C3AED;
+        }
+        [data-testid="stAlertContainer"]:has(div[data-testid="stNotificationContentWarning"]) {
+            background: #FFF3DE; border-left-color: #F59E0B;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def stat_row(items: list[tuple[str, str]]):
+def stat_row(items: list[tuple[str, str, str]]):
+    """items: (label, value, icon) 튜플 리스트. icon은 이모지 1개."""
     html = '<div class="stat-row">' + "".join(
-        f'<div class="stat-card"><div class="label">{label}</div><div class="value">{value}</div></div>'
-        for label, value in items
+        f'<div class="stat-card"><div class="icon-chip">{icon}</div>'
+        f'<div><div class="label">{label}</div><div class="value">{value}</div></div></div>'
+        for label, value, icon in items
     ) + "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
 
+def page_header(title: str, desc: str, badge_text: str | None = None):
+    badge_html = f'<div class="badge">{badge_text}</div>' if badge_text else ""
+    st.markdown(
+        f"""<div class="page-header">
+            <div class="titles">
+                <h3>{title}</h3>
+                <div class="section-desc">{desc}</div>
+            </div>
+            {badge_html}
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 # ---------------------------------------------------------------------------
-# 이번 주 인기 검색어
+# 실시간 인기 검색어
 # ---------------------------------------------------------------------------
 NAVER_CATEGORIES = [
     {"slug": "fashion_women", "title": "네이버 패션의류", "meta": "패션의류 › 여성의류 · 일간 · 최근 1개월"},
@@ -218,24 +372,33 @@ def load_app_search_dates() -> list[date]:
     return sorted(dates, reverse=True)
 
 
-def run_naver_scraper() -> tuple[bool, str]:
+def run_scraper_script(script_path: Path, timeout: int) -> tuple[bool, str]:
+    # 자식 프로세스의 stdout/stderr 인코딩을 UTF-8로 강제한다. Windows 콘솔 기본 코드페이지(cp949)로는
+    # 스크래퍼가 출력하는 일부 문자(예: 화살표, 특수 기호, Playwright 에러 메시지 내 문자)를 인코딩하지
+    # 못해 UnicodeEncodeError로 죽고, 그게 비정상 종료 코드로 이어져 실제로는 정상 수집됐거나 다른
+    # 이유로 실패했는데도 원인을 알 수 없는 "수집 실패"로만 보이는 문제가 있었다.
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     result = subprocess.run(
-        [sys.executable, str(SCRAPER_SCRIPT)],
-        capture_output=True, text=True, timeout=90,
+        [sys.executable, str(script_path)],
+        capture_output=True, text=True, timeout=timeout,
+        encoding="utf-8", errors="replace", env=env,
     )
     ok = result.returncode == 0
     log = (result.stdout or "") + (result.stderr or "")
     return ok, log
+
+
+def run_naver_scraper() -> tuple[bool, str]:
+    return run_scraper_script(SCRAPER_SCRIPT, timeout=90)
 
 
 def run_app_search_scraper() -> tuple[bool, str]:
-    result = subprocess.run(
-        [sys.executable, str(APP_SEARCH_SCRAPER_SCRIPT)],
-        capture_output=True, text=True, timeout=120,
-    )
-    ok = result.returncode == 0
-    log = (result.stdout or "") + (result.stderr or "")
-    return ok, log
+    return run_scraper_script(APP_SEARCH_SCRAPER_SCRIPT, timeout=120)
+
+
+def run_competitor_scraper() -> tuple[bool, str]:
+    # 브랜드검색 PC/MO + 메타 소재까지 4개 브랜드 전부 도는 데 시간이 걸려서 넉넉히 잡는다.
+    return run_scraper_script(COMPETITOR_SCRAPER_SCRIPT, timeout=240)
 
 
 def section_naver():
@@ -295,14 +458,18 @@ def section_naver():
             st.caption("이 카테고리는 아직 날짜별 이력이 1건뿐이라 추이를 볼 수 없습니다.")
 
 
-def latest_channel_df(channel: str, dates: list[date]) -> tuple[pd.DataFrame | None, date | None, str | None]:
+def latest_channel_df(channel: str, dates: list[date]) -> tuple[pd.DataFrame | None, date | None, str | None, str | None]:
     for d in dates:
         day_df = pd.read_csv(APP_SEARCH_DIR / f"{d.isoformat()}.csv", encoding="utf-8-sig")
         sub = day_df[day_df["channel"] == channel]
         if not sub.empty:
             input_by = sub.iloc[0].get("input_by")
-            return sub[["rank", "keyword"]], d, input_by
-    return None, None, None
+            # input_at은 초 단위까지 저장돼 있지만(scraper/app_search_scraper.py) 카드에는
+            # 분 단위까지만 노출한다 — 초 단위는 회의 화면에서 의미 없는 노이즈.
+            input_at_raw = sub.iloc[0].get("input_at", "")
+            input_time = input_at_raw[11:16] if isinstance(input_at_raw, str) and len(input_at_raw) >= 16 else None
+            return sub[["rank", "keyword"]], d, input_by, input_time
+    return None, None, None, None
 
 
 def section_app_search():
@@ -328,9 +495,10 @@ def section_app_search():
     hist_dates = load_app_search_dates()
     cols = st.columns(len(APP_CHANNELS))
     for channel, col in zip(APP_CHANNELS, cols):
-        df_latest, d, input_by = latest_channel_df(channel, hist_dates)
+        df_latest, d, input_by, input_time = latest_channel_df(channel, hist_dates)
         source_label = "수동 입력" if input_by == "user" else "자동 캡처" if input_by == "auto" else "수동 입력"
-        meta = f"{source_label} · {d.isoformat()}" if d else "아직 데이터 없음"
+        time_suffix = f" {input_time}" if input_time else ""
+        meta = f"{source_label} · {d.isoformat()}{time_suffix}" if d else "아직 데이터 없음"
         with col:
             render_rank_card(channel, meta, df_latest, empty_msg="아직 데이터가 없습니다. 새로고침하거나 아래에서 직접 입력하세요.")
 
@@ -387,15 +555,20 @@ def section_app_search():
 
 
 def page_keywords():
-    st.markdown("### 이번 주 인기 검색어")
     naver_dates = sorted(
         {d for cat in NAVER_CATEGORIES for d in load_category_dates(cat["slug"])}, reverse=True
     )
     app_dates = load_app_search_dates()
+    latest_date = max([d for d in [naver_dates[0] if naver_dates else None, app_dates[0] if app_dates else None] if d], default=None)
+    page_header(
+        "실시간 인기 검색어",
+        "네이버 데이터랩 쇼핑인사이트와 4개 채널 앱 검색창의 인기 검색어를 모아봅니다.",
+        badge_text=f"최신 기준일 {latest_date.isoformat()}" if latest_date else "미수집",
+    )
     stat_row([
-        ("네이버 데이터랩 최신 기준일", naver_dates[0].isoformat() if naver_dates else "미수집"),
-        ("앱 검색어 입력 채널 수", f"{len(APP_CHANNELS)}개"),
-        ("앱 검색어 최근 입력일", app_dates[0].isoformat() if app_dates else "미입력"),
+        ("네이버 데이터랩 최신 기준일", naver_dates[0].isoformat() if naver_dates else "미수집", "🛍️"),
+        ("앱 검색어 입력 채널 수", f"{len(APP_CHANNELS)}개", "📱"),
+        ("앱 검색어 최근 입력일", app_dates[0].isoformat() if app_dates else "미입력", "🕐"),
     ])
     section_naver()
     st.divider()
@@ -405,22 +578,37 @@ def page_keywords():
 # ---------------------------------------------------------------------------
 # 경쟁사 모니터링
 # ---------------------------------------------------------------------------
-def render_media_card(title: str, meta: str, image_path: Path | None, empty_msg: str = "미등록"):
+def render_media_card(title: str, meta: str, image_path: Path | None, empty_msg: str = "미등록", aspect_ratio: str | None = None):
+    # 이미지 위에 제목을 얹는 대신, 기존 경쟁사 동향 스프레드시트처럼 이미지 "아래"에 회색 캡션 바
+    # (예: "WEB_이벤트 페이지")로 라벨을 붙인다 — 시트에서 대시보드로 넘어와도 낯설지 않도록.
+    import base64
     import html as html_lib
 
-    st.markdown(
-        f"""<div class="rank-card" style="padding-bottom:16px;">
-            <div class="rank-card-head">
-                <div class="rank-card-title">{html_lib.escape(title)}</div>
-            </div>
-            <div class="rank-card-meta"><span>{html_lib.escape(meta)}</span></div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="rank-card media-card">', unsafe_allow_html=True)
     if image_path and image_path.exists():
-        st.image(str(image_path), use_container_width=True)
+        if aspect_ratio:
+            # 브랜드마다 소재 이미지의 원본 가로세로 비율이 달라(정사각형/세로형 등) 그냥 넣으면
+            # 카드 높이가 브랜드마다 들쭉날쭉해진다. 고정 비율 박스 안에 원본 비율 그대로(잘리지 않게)
+            # 담아서 레이아웃 크기는 통일하고 이미지만 그 안에 맞춘다 (사용자 요청, 2026-07-29).
+            mime = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+            b64 = base64.b64encode(image_path.read_bytes()).decode()
+            st.markdown(
+                f'<div style="aspect-ratio:{aspect_ratio}; background:#FAFAFA; border-radius:12px; '
+                'overflow:hidden; display:flex; align-items:center; justify-content:center;">'
+                f'<img src="data:{mime};base64,{b64}" style="max-width:100%; max-height:100%; '
+                'object-fit:contain;" />'
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.image(str(image_path), use_container_width=True)
     else:
         st.markdown(f'<div class="media-empty">{html_lib.escape(empty_msg)}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="media-caption"><span class="media-caption-title">{html_lib.escape(title)}</span>'
+        f'<span class="media-caption-meta">{html_lib.escape(meta)}</span></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -438,26 +626,160 @@ def save_competitor_row(row: dict):
     df.to_csv(COMPETITOR_CSV, index=False, encoding="utf-8-sig")
 
 
+def load_keywords_for(brand: str, view_date: date) -> list[str]:
+    # scraper/competitor_monitor_scraper.py가 브랜드검색 박스 썸네일 캡션에서 자동 추출해 저장한다.
+    if not COMPETITOR_KEYWORDS_CSV.exists():
+        return []
+    df = pd.read_csv(COMPETITOR_KEYWORDS_CSV, encoding="utf-8-sig", keep_default_na=False)
+    match = df[(df["date"] == view_date.isoformat()) & (df["brand"] == brand)]
+    if match.empty or not match.iloc[0]["keywords"]:
+        return []
+    return [k for k in match.iloc[0]["keywords"].split(",") if k]
+
+
+def load_comment_for(brand: str, view_date: date) -> str:
+    if not COMPETITOR_COMMENTS_CSV.exists():
+        return ""
+    df = pd.read_csv(COMPETITOR_COMMENTS_CSV, encoding="utf-8-sig", keep_default_na=False)
+    match = df[(df["date"] == view_date.isoformat()) & (df["brand"] == brand)]
+    return match.iloc[0]["comment"] if not match.empty else ""
+
+
+def save_comment_for(brand: str, view_date: date, comment: str):
+    # 코멘트(소재 해석)는 사람 판단이 필요한 영역이라 자동 생성하지 않고 마케터가 직접 작성해 저장한다.
+    COMPETITOR_DIR.mkdir(parents=True, exist_ok=True)
+    df = (
+        pd.read_csv(COMPETITOR_COMMENTS_CSV, encoding="utf-8-sig", keep_default_na=False)
+        if COMPETITOR_COMMENTS_CSV.exists()
+        else pd.DataFrame(columns=["date", "brand", "comment", "updated_at"])
+    )
+    df = df[~((df["date"] == view_date.isoformat()) & (df["brand"] == brand))]
+    df = pd.concat([df, pd.DataFrame([{
+        "date": view_date.isoformat(),
+        "brand": brand,
+        "comment": comment,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }])], ignore_index=True)
+    df.to_csv(COMPETITOR_COMMENTS_CSV, index=False, encoding="utf-8-sig")
+
+
+COMPETITOR_ARCHIVE_CSV = COMPETITOR_DIR / "archive_weeks.csv"
+
+
+def week_of_month(d: date) -> int:
+    # scraper/weekly_archive.py의 계산과 반드시 같은 로직이어야 한다 ("그 달의 몇 번째 월요일인가").
+    count = 0
+    for day in range(1, d.day + 1):
+        if d.replace(day=day).weekday() == 0:
+            count += 1
+    return max(count, 1)
+
+
+def week_label(d: date) -> str:
+    return f"{d.year % 100}년 {d.month}월 {week_of_month(d)}주차"
+
+
+def load_archive_weeks() -> pd.DataFrame:
+    if not COMPETITOR_ARCHIVE_CSV.exists():
+        return pd.DataFrame(columns=["week_label", "date", "archived_at"])
+    return pd.read_csv(COMPETITOR_ARCHIVE_CSV, encoding="utf-8-sig", keep_default_na=False)
+
+
 def page_competitor():
-    st.markdown("### 경쟁사 모니터링")
+    view_date_for_badge = st.session_state.get("competitor_view_date", date.today())
+    page_header(
+        "경쟁사 모니터링",
+        "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재 2종을 자동 캡처합니다 (수동 업로드도 가능).",
+        badge_text=week_label(view_date_for_badge),
+    )
+
     st.markdown(
-        '<div class="section-desc">브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고관리자 운영 소재 2종을 '
-        "직접 캡처해 업로드합니다 (경쟁사 API·크롤링 불가로 반자동 방식).</div>",
+        f'<div class="section-desc" style="margin-top:-6px;">경쟁사 리스트 · {" · ".join(COMPETITOR_BRANDS)}</div>',
         unsafe_allow_html=True,
     )
 
+    col1, _ = st.columns([1, 3])
+    with col1:
+        if st.button("새로고침 (4개 브랜드 브랜드검색+메타소재 전체 재수집)"):
+            with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
+                ok, log = run_competitor_scraper()
+            if ok:
+                st.success("수집 완료")
+            else:
+                st.error("일부 브랜드/슬롯 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
+                st.code(log)
+
+    # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).
+    view_date = st.session_state.get("competitor_view_date", date.today())
+    st.caption(f"현재 보고 있는 주차: {week_label(view_date)} (매주 금요일 오전 10시 자동 아카이브 · 매주 월요일 오전 9시 30분 자동 업데이트+슬랙 알림)")
+    with st.expander("직접 날짜 선택"):
+        manual_date = st.date_input("조회 날짜", value=view_date, key="competitor_manual_date")
+        if manual_date != view_date:
+            st.session_state["competitor_view_date"] = manual_date
+            st.rerun()
+
     df = load_competitor()
-    view_date = st.date_input("조회 날짜", value=date.today(), key="competitor_view_date")
     day_df = df[df["date"] == view_date.isoformat()] if not df.empty else df
 
     stat_row([
-        ("모니터링 브랜드", f"{len(COMPETITOR_BRANDS)}개"),
-        (f"{view_date.isoformat()} 등록된 이미지", f"{len(day_df)} / {len(COMPETITOR_BRANDS) * len(COMPETITOR_SLOTS)}"),
+        ("모니터링 브랜드", f"{len(COMPETITOR_BRANDS)}개", "🏷️"),
+        (f"{view_date.isoformat()} 등록된 이미지", f"{len(day_df)} / {len(COMPETITOR_BRANDS) * len(COMPETITOR_SLOTS)}", "🖼️"),
     ])
 
+    import html as html_lib
+
+    brand_slugs = {brand: f"brand-{i}" for i, brand in enumerate(COMPETITOR_BRANDS)}
+
+    st.markdown('<div class="group-label">이번 주 요약 — 브랜드를 클릭하면 아래 상세로 이동합니다</div>', unsafe_allow_html=True)
+    summary_cards = ""
     for brand in COMPETITOR_BRANDS:
-        st.markdown(f'<div class="brand-block"><div class="brand-title">{brand}</div>', unsafe_allow_html=True)
+        comment = load_comment_for(brand, view_date)
+        comment_html = (
+            f'<div class="summary-comment">{html_lib.escape(comment)}</div>' if comment
+            else '<div class="summary-empty">코멘트 미작성</div>'
+        )
+        summary_cards += (
+            f'<a class="summary-card" href="#{brand_slugs[brand]}">'
+            f'<div class="summary-brand">{html_lib.escape(brand)}</div>{comment_html}</a>'
+        )
+    st.markdown(f'<div class="summary-grid">{summary_cards}</div>', unsafe_allow_html=True)
+
+    for i, brand in enumerate(COMPETITOR_BRANDS):
+        st.markdown(
+            f'<div class="brand-block" id="{brand_slugs[brand]}">'
+            f'<div class="brand-header"><div class="brand-title">{i + 1}. {html_lib.escape(brand)}</div></div>',
+            unsafe_allow_html=True,
+        )
         brand_df = day_df[day_df["brand"] == brand] if not day_df.empty else day_df
+
+        keywords = load_keywords_for(brand, view_date)
+        st.markdown('<div class="group-label">주요 키워드</div>', unsafe_allow_html=True)
+        if keywords:
+            pills = "".join(f'<span class="keyword-pill">#{html_lib.escape(k)}</span>' for k in keywords)
+            st.markdown(f"<div>{pills}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<div class="keyword-empty">아직 추출된 키워드가 없습니다 (새로고침 시 브랜드검색 소재에서 자동 추출됩니다).</div>',
+                unsafe_allow_html=True,
+            )
+
+        current_comment = load_comment_for(brand, view_date)
+        if current_comment:
+            st.markdown(
+                f'<div class="comment-box"><span class="comment-label">코멘트</span>{html_lib.escape(current_comment)}</div>',
+                unsafe_allow_html=True,
+            )
+        with st.expander("코멘트 작성/수정", expanded=not bool(current_comment)):
+            with st.form(key=f"comment_form_{brand}_{view_date}"):
+                comment_input = st.text_area(
+                    "이 브랜드의 이번 소재/기획전에 대한 해석·전략 메모 (예: 주요 기획전 컨셉, 톤앤매너 등)",
+                    value=current_comment, height=90, key=f"comment_text_{brand}_{view_date}",
+                )
+                comment_submitted = st.form_submit_button("코멘트 저장")
+            if comment_submitted:
+                save_comment_for(brand, view_date, comment_input.strip())
+                st.success("저장 완료")
+                st.rerun()
 
         def slot_lookup(slot: str) -> tuple[Path | None, str]:
             match = brand_df[brand_df["slot"] == slot] if not brand_df.empty else brand_df
@@ -468,19 +790,19 @@ def page_competitor():
                     return p, f"{view_date.isoformat()} 등록"
             return None, "미등록"
 
-        st.markdown('<div class="group-label">브랜드검색</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label">{i + 1}-1. 브랜드검색</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["브랜드검색 PC", "브랜드검색 MO"], cols):
             with col:
                 image_path, meta = slot_lookup(slot)
                 render_media_card(slot, meta, image_path)
 
-        st.markdown('<div class="group-label" style="margin-top:16px;">메타 광고 소재</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 메타 광고 소재</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["메타소재 1", "메타소재 2"], cols):
             with col:
                 image_path, meta = slot_lookup(slot)
-                render_media_card(slot, meta, image_path)
+                render_media_card(slot, meta, image_path, aspect_ratio="4/5")
 
         with st.expander(f"{brand} 이미지 업로드/교체 — {view_date.isoformat()}"):
             for slot in COMPETITOR_SLOTS:
@@ -522,7 +844,34 @@ def main():
         )
         page = st.radio("nav", NAV_ITEMS, label_visibility="collapsed")
 
-    if page == "이번 주 인기 검색어":
+        if page == "경쟁사 모니터링":
+            if "archive_expanded" not in st.session_state:
+                st.session_state["archive_expanded"] = False
+            chevron = "▾" if st.session_state["archive_expanded"] else "▸"
+            if st.button(f"{chevron}  주차별 아카이브", key="archive_toggle", use_container_width=True):
+                st.session_state["archive_expanded"] = not st.session_state["archive_expanded"]
+                st.rerun()
+
+            if st.session_state["archive_expanded"]:
+                archive_df = load_archive_weeks()
+                if not archive_df.empty:
+                    archive_df = archive_df.sort_values("date", ascending=False)
+                if archive_df.empty:
+                    st.caption("　아직 기록된 주차가 없습니다.")
+                else:
+                    current_date = st.session_state.get("competitor_view_date", date.today()).isoformat()
+                    for _, row in archive_df.iterrows():
+                        is_current = row["date"] == current_date
+                        mark = "●" if is_current else "‧"
+                        if st.button(
+                            f"　{mark} {row['week_label']}",
+                            key=f"archive_btn_{row['week_label']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["competitor_view_date"] = date.fromisoformat(row["date"])
+                            st.rerun()
+
+    if page == "실시간 인기 검색어":
         page_keywords()
     else:
         page_competitor()

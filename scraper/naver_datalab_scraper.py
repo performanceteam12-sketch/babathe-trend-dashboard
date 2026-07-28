@@ -111,6 +111,11 @@ def save_csv(slug: str, category_label: str, results: list[dict], target_date: d
 
 
 def main():
+    # Windows 콘솔 기본 코드페이지(cp949)로는 일부 출력(특히 Playwright 에러 메시지에 섞여 나오는
+    # 특수기호)이 UnicodeEncodeError로 죽어서 실제 성공 여부와 무관하게 "실패"로 보이는 문제가 있었다.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--debug", action="store_true", help="스크린샷 저장, 브라우저 창 표시")
     args = parser.parse_args()

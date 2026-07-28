@@ -156,6 +156,11 @@ def save_channel(channel: str, keywords: list[str], target_date: date):
 
 
 def main():
+    # Windows 콘솔 기본 코드페이지(cp949)로는 일부 출력이 UnicodeEncodeError로 죽어서 실제 성공
+    # 여부와 무관하게 "실패"로 보이는 문제가 있었다 (경쟁사 모니터링 스크래퍼에서 실제로 발생).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--channels", nargs="*", help="캡처할 브랜드만 지정 (기본: 전체 4개)")
     args = parser.parse_args()
