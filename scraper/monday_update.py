@@ -43,18 +43,14 @@ def load_dashboard_url() -> str | None:
 
 
 def notify_slack(webhook_url: str, today: date, log: list) -> None:
-    # "@babafashion"은 실제 슬랙 멘션(알림 발송)이 아니라 굵은 텍스트로만 표시한다 (사용자 요청).
     failures = [line for line in log if line.startswith("[FAIL]")]
     dashboard_url = load_dashboard_url()
     label = f"<{dashboard_url}|[경쟁사 모니터링]>" if dashboard_url else "[경쟁사 모니터링]"
-    tag = "*@babafashion*"
     if failures:
-        text = (
-            f"{today.isoformat()} {label} 업데이트 중 {len(failures)}건 실패 {tag}\n"
-            + "\n".join(failures)
-        )
+        summary = f"*{today.isoformat()} {label} 업데이트 중 {len(failures)}건 실패*"
+        text = summary + "\n" + "\n".join(failures)
     else:
-        text = f"{today.isoformat()} {label} 업데이트 완료 {tag}"
+        text = f"*{today.isoformat()} {label} 업데이트 완료*"
     body = json.dumps({"text": text}).encode("utf-8")
     req = request.Request(webhook_url, data=body, headers={"Content-Type": "application/json"})
     request.urlopen(req, timeout=10)

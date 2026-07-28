@@ -25,7 +25,7 @@ COMPETITOR_SCRAPER_SCRIPT = ROOT / "scraper" / "competitor_monitor_scraper.py"
 APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
-NAV_ITEMS = ["실시간 인기 검색어", "경쟁사 모니터링"]
+NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
 st.set_page_config(
     page_title="바바더닷컴 패션 트렌드 대시보드",
