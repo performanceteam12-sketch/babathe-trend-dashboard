@@ -43,13 +43,18 @@ def load_dashboard_url() -> str | None:
 
 
 def notify_slack(webhook_url: str, today: date, log: list) -> None:
+    # "@babafashion"은 실제 슬랙 멘션(알림 발송)이 아니라 팀 채널 관례대로 텍스트로만 붙인다 —
+    # incoming webhook은 <@USER_ID> 형식이 아니면 진짜 멘션으로 동작하지 않는다 (알려진 제약).
     failures = [line for line in log if line.startswith("[FAIL]")]
     dashboard_url = load_dashboard_url()
-    label = f"<{dashboard_url}|경쟁사 모니터링>" if dashboard_url else "경쟁사 모니터링"
+    label = f"<{dashboard_url}|[경쟁사 모니터링]>" if dashboard_url else "[경쟁사 모니터링]"
     if failures:
-        text = f"{today.isoformat()} {label} 업데이트 중 {len(failures)}건 실패\n" + "\n".join(failures)
+        text = (
+            f"{today.isoformat()} {label} 업데이트 중 {len(failures)}건 실패 @babafashion\n"
+            + "\n".join(failures)
+        )
     else:
-        text = f"{today.isoformat()} {label} 업데이트 완료"
+        text = f"{today.isoformat()} {label} 업데이트 완료 @babafashion"
     body = json.dumps({"text": text}).encode("utf-8")
     req = request.Request(webhook_url, data=body, headers={"Content-Type": "application/json"})
     request.urlopen(req, timeout=10)
