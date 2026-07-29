@@ -629,6 +629,17 @@ def load_competitor() -> pd.DataFrame:
     return pd.read_csv(COMPETITOR_CSV, encoding="utf-8-sig", keep_default_na=False)
 
 
+def latest_competitor_date() -> date | None:
+    # 배포된 화면은 세션마다 session_state가 비어 있어 기본값이 항상 date.today()로 떨어진다.
+    # 로컬 스크래핑은 특정 요일(금/월)에만 도니 "오늘" 데이터가 없는 날이 대부분이라, 그대로 두면
+    # 방문할 때마다 화면이 텅 비어 보인다 — 데이터가 있는 가장 최근 날짜를 기본값으로 쓴다.
+    df = load_competitor()
+    if df.empty:
+        return None
+    dates = sorted({date.fromisoformat(d) for d in df["date"].unique() if d}, reverse=True)
+    return dates[0] if dates else None
+
+
 def save_competitor_row(row: dict):
     COMPETITOR_DIR.mkdir(parents=True, exist_ok=True)
     df = load_competitor()
@@ -697,7 +708,8 @@ def load_archive_weeks() -> pd.DataFrame:
 
 
 def page_competitor():
-    view_date_for_badge = st.session_state.get("competitor_view_date", date.today())
+    default_view_date = latest_competitor_date() or date.today()
+    view_date_for_badge = st.session_state.get("competitor_view_date", default_view_date)
     page_header(
         "경쟁사 모니터링",
         "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재 2종을 자동 캡처합니다 (수동 업로드도 가능).",
@@ -727,7 +739,7 @@ def page_competitor():
         )
 
     # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).
-    view_date = st.session_state.get("competitor_view_date", date.today())
+    view_date = st.session_state.get("competitor_view_date", default_view_date)
     st.caption(f"현재 보고 있는 주차: {week_label(view_date)} (매주 금요일 오전 10시 자동 아카이브 · 매주 월요일 오전 9시 30분 자동 업데이트+슬랙 알림)")
     with st.expander("직접 날짜 선택"):
         manual_date = st.date_input("조회 날짜", value=view_date, key="competitor_manual_date")
@@ -876,7 +888,9 @@ def main():
                 if archive_df.empty:
                     st.caption("　아직 기록된 주차가 없습니다.")
                 else:
-                    current_date = st.session_state.get("competitor_view_date", date.today()).isoformat()
+                    current_date = st.session_state.get(
+                        "competitor_view_date", latest_competitor_date() or date.today()
+                    ).isoformat()
                     for _, row in archive_df.iterrows():
                         is_current = row["date"] == current_date
                         mark = "●" if is_current else "‧"
