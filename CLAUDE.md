@@ -67,7 +67,15 @@
 - `BabaderMondayUpdate`(신규, 2026-07-28): Windows 작업 스케줄러 등록, **매주 월요일 오전 09:30**에 `scraper/monday_update.py` 실행 — 영업회의 전 경쟁사 모니터링(브랜드검색+메타소재)만 재수집하고, 완료되면 슬랙 웹훅으로 결과(성공/실패 요약)를 알린다. 이 실행은 `archive_weeks.csv`에 기록하지 않는다(그건 금요일 아카이브의 역할 — 월요일 실행은 그냥 "최신 스냅샷 갱신"용).
 - 기존 `BabaderCompetitorMonitor`(목요일 17:00, 경쟁사 모니터링만 재수집)는 2026-07-28에 삭제 — 금(아카이브)/월(업데이트+알림) 2개 스케줄로 통합됐기 때문에 별도 목요일 실행이 불필요해짐.
 - 네이버 데이터랩 스크래퍼(`naver_datalab_scraper.py`)는 별도 스케줄 없이 대시보드 "새로고침" 버튼으로만 수동 실행 (저빈도·수동 트리거 원칙 유지).
+- `BabaderDashboardKeepAwake`(신규, 2026-07-28): Windows 작업 스케줄러 등록, **매일 00:00부터 6시간마다** `scraper/keep_dashboard_awake.py` 실행 — 배포된 Streamlit Cloud 앱은 무료 플랜이라 방문자가 없으면 "잠자기 모드"(Zzzz... 화면)로 전환되는데, 이를 막기 위해 Playwright로 실제 방문(+잠자기 화면이면 "Yes, get this app back up!" 클릭)을 자동화한 것. `dashboard_url`은 `.streamlit/secrets.toml`에서 읽는다.
 - 스케줄 등록/변경: `schtasks /create` 또는 `/change /tn "<task명>" ...`, 확인은 `schtasks /query /tn "<task명>" /v /fo LIST`.
+
+## 배포 (Streamlit Community Cloud)
+- **배포 완료 (2026-07-28)**: https://babathe-trend-dashboard.streamlit.app/ — GitHub 저장소(`performanceteam12-sketch/babathe-trend-dashboard`, Public)를 연결해 배포. 뷰어 접근은 특정 이메일로 제한(Settings > Sharing)하도록 안내함.
+- GitHub 저장소는 공개(Public)이지만 앱 뷰어 접근은 이메일 화이트리스트로 제한 — 무료 플랜에서도 가능한 기능.
+- **배포된 앱은 로컬 PC의 data/ 폴더가 아니라 GitHub 저장소 내용을 그대로 읽는다.** 그래서 로컬에서 예약 실행되는 `weekly_archive.py`/`monday_update.py`는 스크래핑 직후 `scraper/git_sync.py`(`sync_to_github()`)로 변경된 데이터를 자동 커밋+푸시한다 — 이게 없으면 배포된 대시보드가 영원히 첫 배포 시점 데이터로 멈춰 있게 된다.
+- `git_sync.py`는 `data/competitor_monitor/images/` 폴더 **전체**가 아니라 `competitor_monitor.csv`에 실제로 참조된 파일만 커밋한다 — 스크래핑 과정에서 생기는 미참조 후보 이미지(콘텐츠 판별 실패로 버려진 후보 등)까지 매번 커밋하면 저장소 용량이 무한정 불어나기 때문 (최초 배포 시점 확인: 로컬 이미지 폴더 3452개 파일 중 실제 참조되는 건 32개뿐이었음).
+- `.gitignore`의 `data/competitor_monitor/images/*` 제외 규칙은 2026-07-28에 제거함(배포를 위해 이미지도 커밋해야 해서). 대신 `git add`할 때 참조 파일만 골라 추가하는 방식으로 저장소 비대화를 방지.
 
 ## 슬랙 알림 (`scraper/monday_update.py`)
 - **설정 완료 (2026-07-28)**: `.streamlit/secrets.toml`에 `slack_webhook_url` 저장됨 (마케팅12팀 슬랙 워크스페이스의 "Competitor Monitor Bot" 앱 → Incoming Webhooks, `#mkt_바바더닷컴` 채널로 연결). 테스트 메시지 발송·수신 확인 완료.
