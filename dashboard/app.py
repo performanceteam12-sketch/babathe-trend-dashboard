@@ -406,6 +406,60 @@ def run_competitor_scraper() -> tuple[bool, str]:
     return run_scraper_script(COMPETITOR_SCRAPER_SCRIPT, timeout=240)
 
 
+GITHUB_REPO = "performanceteam12-sketch/babathe-trend-dashboard"
+REFRESH_SIGNAL_PATH = "data/refresh_signal.json"
+
+
+def request_remote_refresh(target: str) -> tuple[bool, str]:
+    # 배포된(클라우드) 화면에는 Playwright가 없어 직접 스크래핑이 불가능하다. 대신 GitHub API로
+    # 신호 파일을 기록해두면, 로컬 PC의 scraper/remote_refresh_watcher.py가 5분마다 확인해
+    # 그때 실제로 스크래핑한다 (scraper/remote_refresh_watcher.py 참고).
+    import base64
+    import json
+    from urllib import request as urllib_request
+
+    token = st.secrets.get("github_token")
+    if not token:
+        return False, "github_token이 설정되어 있지 않습니다 (Streamlit Cloud 앱 설정 > Secrets 확인 필요)."
+
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{REFRESH_SIGNAL_PATH}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+
+    sha = None
+    try:
+        with urllib_request.urlopen(urllib_request.Request(api_url, headers=headers), timeout=10) as resp:
+            sha = json.loads(resp.read()).get("sha")
+    except Exception:
+        pass  # 파일이 아직 없으면 최초 생성 (sha 없이 진행)
+
+    requested_at = datetime.now().isoformat(timespec="seconds")
+    payload = {"requested_at": requested_at, "target": target}
+    content_b64 = base64.b64encode(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode()
+    body = {"message": f"새로고침 요청: {target} ({requested_at})", "content": content_b64}
+    if sha:
+        body["sha"] = sha
+
+    try:
+        put_req = urllib_request.Request(
+            api_url, data=json.dumps(body).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"}, method="PUT",
+        )
+        urllib_request.urlopen(put_req, timeout=10)
+        return True, requested_at
+    except Exception as e:  # noqa: BLE001 — 네트워크/권한 오류를 사용자에게 그대로 보여주기 위해 넓게 캐치
+        return False, str(e)
+
+
+def remote_refresh_button(label: str, target: str, key: str):
+    if st.button(label, key=key):
+        ok, info = request_remote_refresh(target)
+        if ok:
+            st.success("요청 완료! 로컬 PC가 5분 내로 확인해 새로고침합니다.")
+        else:
+            st.error(f"요청 실패: {info}")
+    st.caption("실제 반영까지 최대 5분 정도 걸릴 수 있습니다 (로컬 PC가 5분마다 확인).")
+
+
 def section_naver():
     st.markdown("#### 네이버 데이터랩")
     st.markdown(
@@ -426,7 +480,7 @@ def section_naver():
                     st.error("수집 실패 — 사이트 구조가 바뀌었거나 접근이 차단되었을 수 있습니다.")
                     st.code(log)
     else:
-        st.info("이 데이터는 로컬 PC 예약 작업으로 자동 갱신됩니다. (배포된 화면에서는 새로고침이 지원되지 않습니다)")
+        remote_refresh_button("새로고침 요청 보내기 (네이버 데이터랩)", "naver", key="remote_refresh_naver")
 
     cat_cols = st.columns(len(NAVER_CATEGORIES))
     for cat, col in zip(NAVER_CATEGORIES, cat_cols):
@@ -501,7 +555,7 @@ def section_app_search():
                     st.error("일부 브랜드 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
                     st.code(log)
     else:
-        st.info("이 데이터는 로컬 PC 예약 작업으로 자동 갱신됩니다. (배포된 화면에서는 새로고침이 지원되지 않습니다)")
+        remote_refresh_button("새로고침 요청 보내기 (앱 실시간 검색어)", "app_search", key="remote_refresh_app_search")
 
     hist_dates = load_app_search_dates()
     cols = st.columns(len(APP_CHANNELS))

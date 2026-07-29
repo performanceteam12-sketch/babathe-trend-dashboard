@@ -24,13 +24,9 @@ def referenced_image_paths() -> list[str]:
     return [f"data/competitor_monitor/images/{f}" for f in df["image_file"].unique() if f]
 
 
-def sync_to_github(commit_message: str, log: list) -> None:
-    paths = [
-        "data/competitor_monitor/competitor_monitor.csv",
-        "data/competitor_monitor/archive_weeks.csv",
-        "data/competitor_monitor/comments.csv",
-        "data/competitor_monitor/keywords.csv",
-    ] + referenced_image_paths()
+def sync_paths(paths: list[str], commit_message: str, log: list) -> None:
+    """주어진 경로들만 골라 커밋+푸시한다 (범용). 폴더 전체를 add하지 않고 파일 단위로 골라야
+    스크래핑 중 생기는 미참조 파일(예: 경쟁사 이미지 후보)이 저장소에 계속 쌓이는 걸 막을 수 있다."""
     existing = [p for p in paths if (ROOT / p).exists()]
     if not existing:
         log.append("[SKIP] GitHub에 반영할 데이터 파일이 없음")
@@ -54,3 +50,14 @@ def sync_to_github(commit_message: str, log: list) -> None:
         log.append("[OK] GitHub에 최신 데이터 반영 완료 (배포된 대시보드도 곧 갱신됩니다)")
     except subprocess.CalledProcessError as e:
         log.append(f"[FAIL] GitHub 반영 실패: {e.stderr}")
+
+
+def sync_to_github(commit_message: str, log: list) -> None:
+    """경쟁사 모니터링 전용 (weekly_archive.py, monday_update.py에서 사용)."""
+    paths = [
+        "data/competitor_monitor/competitor_monitor.csv",
+        "data/competitor_monitor/archive_weeks.csv",
+        "data/competitor_monitor/comments.csv",
+        "data/competitor_monitor/keywords.csv",
+    ] + referenced_image_paths()
+    sync_paths(paths, commit_message, log)
