@@ -27,6 +27,11 @@ COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷�
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
+# 새로고침(Playwright 스크래핑)은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
+# 브라우저 바이너리가 없어서 실행하면 항상 실패한다. 배포된 대시보드에서는 버튼 자체를 숨기고
+# "로컬 예약 작업으로 자동 갱신됩니다" 안내만 보여준다 (실패 트레이스백을 노출하지 않기 위함).
+IS_LOCAL = sys.platform == "win32"
+
 st.set_page_config(
     page_title="바바더닷컴 패션 트렌드 대시보드",
     layout="wide",
@@ -409,16 +414,19 @@ def section_naver():
         unsafe_allow_html=True,
     )
 
-    col1, _ = st.columns([1, 3])
-    with col1:
-        if st.button("새로고침 (네이버 스크래핑 1회 실행)"):
-            with st.spinner("네이버 데이터랩에서 카테고리별 TOP40 조회 중..."):
-                ok, log = run_naver_scraper()
-            if ok:
-                st.success("수집 완료")
-            else:
-                st.error("수집 실패 — 사이트 구조가 바뀌었거나 접근이 차단되었을 수 있습니다.")
-                st.code(log)
+    if IS_LOCAL:
+        col1, _ = st.columns([1, 3])
+        with col1:
+            if st.button("새로고침 (네이버 스크래핑 1회 실행)"):
+                with st.spinner("네이버 데이터랩에서 카테고리별 TOP40 조회 중..."):
+                    ok, log = run_naver_scraper()
+                if ok:
+                    st.success("수집 완료")
+                else:
+                    st.error("수집 실패 — 사이트 구조가 바뀌었거나 접근이 차단되었을 수 있습니다.")
+                    st.code(log)
+    else:
+        st.info("이 데이터는 로컬 PC 예약 작업으로 자동 갱신됩니다. (배포된 화면에서는 새로고침이 지원되지 않습니다)")
 
     cat_cols = st.columns(len(NAVER_CATEGORIES))
     for cat, col in zip(NAVER_CATEGORIES, cat_cols):
@@ -481,16 +489,19 @@ def section_app_search():
         unsafe_allow_html=True,
     )
 
-    col1, _ = st.columns([1, 3])
-    with col1:
-        if st.button("새로고침 (4개 브랜드 검색어 1회 캡처)"):
-            with st.spinner("각 사이트 검색창을 열어 인기 검색어 확인 중..."):
-                ok, log = run_app_search_scraper()
-            if ok:
-                st.success("수집 완료")
-            else:
-                st.error("일부 브랜드 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
-                st.code(log)
+    if IS_LOCAL:
+        col1, _ = st.columns([1, 3])
+        with col1:
+            if st.button("새로고침 (4개 브랜드 검색어 1회 캡처)"):
+                with st.spinner("각 사이트 검색창을 열어 인기 검색어 확인 중..."):
+                    ok, log = run_app_search_scraper()
+                if ok:
+                    st.success("수집 완료")
+                else:
+                    st.error("일부 브랜드 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
+                    st.code(log)
+    else:
+        st.info("이 데이터는 로컬 PC 예약 작업으로 자동 갱신됩니다. (배포된 화면에서는 새로고침이 지원되지 않습니다)")
 
     hist_dates = load_app_search_dates()
     cols = st.columns(len(APP_CHANNELS))
@@ -698,16 +709,22 @@ def page_competitor():
         unsafe_allow_html=True,
     )
 
-    col1, _ = st.columns([1, 3])
-    with col1:
-        if st.button("새로고침 (4개 브랜드 브랜드검색+메타소재 전체 재수집)"):
-            with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
-                ok, log = run_competitor_scraper()
-            if ok:
-                st.success("수집 완료")
-            else:
-                st.error("일부 브랜드/슬롯 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
-                st.code(log)
+    if IS_LOCAL:
+        col1, _ = st.columns([1, 3])
+        with col1:
+            if st.button("새로고침 (4개 브랜드 브랜드검색+메타소재 전체 재수집)"):
+                with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
+                    ok, log = run_competitor_scraper()
+                if ok:
+                    st.success("수집 완료")
+                else:
+                    st.error("일부 브랜드/슬롯 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
+                    st.code(log)
+    else:
+        st.info(
+            "이 데이터는 로컬 PC 예약 작업(매주 금요일 10시 아카이브 · 매주 월요일 9시 30분 업데이트)으로 "
+            "자동 갱신됩니다. 배포된 화면에서는 새로고침이 지원되지 않습니다."
+        )
 
     # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).
     view_date = st.session_state.get("competitor_view_date", date.today())
