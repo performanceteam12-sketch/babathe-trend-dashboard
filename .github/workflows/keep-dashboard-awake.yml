@@ -1,0 +1,21 @@
+name: Keep dashboard awake
+
+# 사용자 PC(Windows)가 꺼져 있거나 잠겨 있어도 GitHub 서버에서 자체적으로 실행되므로,
+# 로컬 예약 작업(scraper/keep_dashboard_awake.py)이 실행되지 못하는 경우(PC 전원/로그인 상태)에도
+# 대시보드가 잠들지 않도록 보장한다. 단순 방문(HTTP GET)만으로 "활동"으로 인식되어
+# 잠자기 모드 진입을 막는 것이 목적 — 이미 잠들어버린 뒤에 깨우는 것보다,
+# 애초에 잠들지 않게 자주 방문하는 것이 목표다.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # 10분마다 실행
+  workflow_dispatch: {}  # 수동 실행 버튼(Actions 탭)도 허용
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping dashboard
+        run: |
+          curl -sSL -o /dev/null -w "status=%{http_code}\n" \
+            "https://babathe-trend-dashboard.streamlit.app/" || true
