@@ -49,6 +49,12 @@ PAGE_ID_MAP = {
     "바바더닷컴": "451533041676254",
 }
 
+# 브랜드별로 항상 나오는 상시 캠페인이라 다양성이 떨어지는 키워드 — 메타소재 선택 시 후순위로
+# 미룬다(완전히 제외하지는 않음, 다른 소재가 정말 없으면 최대 1개까지는 허용). 사용자 요청, 2026-07-31.
+DEPRIORITIZE_KEYWORDS = {
+    "바바더닷컴": ["바바데이"],
+}
+
 # 패션(의류·잡화) 소재인지 대략 판단하는 1순위 키워드. 신발은 사용자 요청에 따라 2순위(뷰티/라이프)로
 # 뺐다. 완벽할 수 없으니 "패션 소재 우선, 없으면 뷰티/라이프/신발" 지침에 따라 필터가 아니라
 # 우선순위로만 쓴다 (2026-07-29).
@@ -387,7 +393,15 @@ def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
         # 1순위 패션 → 2순위 뷰티/라이프/신발 → 3순위 그 외(콘텐츠 사진이기만 하면) 순으로,
         # 최신순 상단부터 채운다. 서로 다른 소재(media_id)만 있으므로 자연히 중복은 없다.
         content_only.sort(key=lambda c: c["tier"])
-        chosen = content_only[:2]
+
+        deprioritize_terms = DEPRIORITIZE_KEYWORDS.get(brand, [])
+        preferred = [c for c in content_only if not any(t in c["text"] for t in deprioritize_terms)]
+        deprioritized = [c for c in content_only if any(t in c["text"] for t in deprioritize_terms)]
+
+        chosen = preferred[:2]
+        if len(chosen) < 2 and deprioritized:
+            # 후순위 키워드(예: 상시 캠페인) 소재는 정말 다른 소재가 없을 때만, 그것도 최대 1개까지만 허용.
+            chosen += deprioritized[: min(2 - len(chosen), 1)]
 
         if not chosen:
             log.append(
