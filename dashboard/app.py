@@ -713,6 +713,26 @@ def load_keywords_for(brand: str, view_date: date) -> list[str]:
     return [k for k in match.iloc[0]["keywords"].split(",") if k]
 
 
+def save_keywords_for(brand: str, view_date: date, keywords: list[str]):
+    # 자동 추출된 키워드가 부정확하거나 부족할 때 마케터가 직접 수정할 수 있게 한다 (사용자 요청,
+    # 2026-07-31). 자동 추출 로직(scraper의 extract_keywords_from_box())을 덮어쓰는 게 아니라,
+    # 이 CSV 값 자체를 사람이 직접 고친 값으로 대체하는 것 — 다음 새로고침 전까지는 그대로 유지된다.
+    COMPETITOR_DIR.mkdir(parents=True, exist_ok=True)
+    df = (
+        pd.read_csv(COMPETITOR_KEYWORDS_CSV, encoding="utf-8-sig", keep_default_na=False)
+        if COMPETITOR_KEYWORDS_CSV.exists()
+        else pd.DataFrame(columns=["date", "brand", "keywords", "updated_at"])
+    )
+    df = df[~((df["date"] == view_date.isoformat()) & (df["brand"] == brand))]
+    df = pd.concat([df, pd.DataFrame([{
+        "date": view_date.isoformat(),
+        "brand": brand,
+        "keywords": ",".join(keywords),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }])], ignore_index=True)
+    df.to_csv(COMPETITOR_KEYWORDS_CSV, index=False, encoding="utf-8-sig")
+
+
 def load_comment_for(brand: str, view_date: date) -> str:
     if not COMPETITOR_COMMENTS_CSV.exists():
         return ""
@@ -842,9 +862,21 @@ def page_competitor():
             st.markdown(f"<div>{pills}</div>", unsafe_allow_html=True)
         else:
             st.markdown(
-                '<div class="keyword-empty">아직 추출된 키워드가 없습니다 (새로고침 시 브랜드검색 소재에서 자동 추출됩니다).</div>',
+                '<div class="keyword-empty">아직 추출된 키워드가 없습니다 (새로고침 시 브랜드검색 소재에서 자동 추출되거나, 아래에서 직접 입력할 수 있습니다).</div>',
                 unsafe_allow_html=True,
             )
+        with st.expander("주요 키워드 수정"):
+            with st.form(key=f"keywords_form_{brand}_{view_date}"):
+                keywords_input = st.text_area(
+                    "쉼표로 구분해 입력하세요 (예: FW 신상, 맨즈 썸머룩)",
+                    value=", ".join(keywords), height=68, key=f"keywords_text_{brand}_{view_date}",
+                )
+                keywords_submitted = st.form_submit_button("키워드 저장")
+            if keywords_submitted:
+                new_keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
+                save_keywords_for(brand, view_date, new_keywords)
+                st.success("저장 완료")
+                st.rerun()
 
         current_comment = load_comment_for(brand, view_date)
         if current_comment:
