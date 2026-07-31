@@ -47,6 +47,7 @@
   - 출처: `scraper/competitor_monitor_scraper.py`의 `extract_keywords_from_box()`가 브랜드검색 PC/MO 박스의 썸네일 캡션(예: "FW 신상", "맨즈 썸머룩")에서 자동 추출 — 사용자가 수기로 관리하던 스프레드시트의 "주요 키워드(해시태그)" 항목을 자동화한 것 (2026-07-29).
   - 기계적 텍스트 추출이라 노이즈(카테고리 탭 등)가 섞일 수 있음. `EXCLUDE_KEYWORD_LINES`로 알려진 노이즈(여성/남성/전체 등)와 브랜드명 자체를 제외하지만 완벽하지 않다.
   - 대시보드에서 각 브랜드 블록 상단에 해시태그 pill로 자동 표시됨 (`load_keywords_for()`).
+  - **수동 수정 가능 (2026-07-31)**: 자동 추출 결과가 부정확하거나 부족하면 "주요 키워드 수정" expander에서 쉼표로 구분해 직접 고쳐 저장할 수 있다 (`save_keywords_for()`, 코멘트와 동일한 패턴). 수정한 값은 CSV에 그대로 저장되며, 해당 (date, brand)에 대해 다시 새로고침이 실행되기 전까지는 유지된다 — 새로고침하면 자동 추출 결과로 다시 덮어써진다.
 - `data/competitor_monitor/comments.csv`: `date, brand, comment, updated_at`
   - **자동 생성하지 않음** — 마케터가 대시보드의 "코멘트 작성/수정" 입력란에 직접 작성해 저장 (`save_comment_for()`). 소재 해석·전략 코멘트는 사람 판단이 필요한 영역이라 CLAUDE.md 원칙(코멘트/카피 등은 사람 검수 없이 자동화 금지)에 따라 항상 수동 입력으로 유지한다.
 - `data/competitor_monitor/archive_weeks.csv`: `week_label(예: "26년 7월 4주차"), date(실제 캡처/실행일, ISO), archived_at`
