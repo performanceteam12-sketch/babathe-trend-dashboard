@@ -191,6 +191,29 @@ EXCLUDE_KEYWORD_LINES = {
 }
 PROMO_NUMBER_PATTERN = re.compile(r"\d")
 
+CAMPAIGN_TOKEN_PATTERN = re.compile(r"[가-힣A-Za-z]{2,}")
+CAMPAIGN_TOKEN_NOISE = {
+    "홈페이지", "이벤트", "기획전", "혜택", "쿠폰", "받기", "추가", "할인", "한정", "지금",
+    "바로가기", "바로", "확인", "광고",
+    # 세일/프로모션 문구는 캠페인과 무관하게 거의 모든 광고에 공통으로 등장해서, 이런 단어 하나만
+    # 겹쳐도 "같은 캠페인"으로 잘못 판정하기 쉽다 (2026-07-31 실사례: "베스트" 하나만 겹쳤는데
+    # 실제로는 서로 다른 캠페인이었음). 토큰 집합에서 아예 제외한다.
+    "베스트", "BEST", "세일", "SALE", "신상", "NEW", "특가", "인기", "여름", "브랜드",
+}
+
+
+def campaign_signature(box_text: str) -> set[str]:
+    # PC/MO 브랜드검색 박스가 같은 캠페인인지 대략 비교하기 위한 토큰 집합. box_element.inner_text()는
+    # (홈페이지 링크에서 조상을 타고 올라가 찾은) 박스 전체 텍스트라, 실제로는 화면에 캡처되는 광고
+    # 카드 하나보다 훨씬 넓은 영역까지 포함한다. 특히 "브랜드 SNS 소식"(STYLE LAB 등 evergreen 콘텐츠
+    # 티저)은 캠페인과 무관하게 항상 같은 문구가 붙어 있어서, 이걸 포함해버리면 실제로는 다른 캠페인인
+    # PC/MO가 이 공통 문구 때문에 "같은 캠페인"으로 잘못 판정된다 (2026-07-31 실사례로 확인).
+    # 그래서 "브랜드 SNS 소식" 이전까지만 잘라서 비교하고, 그마저 없으면 앞 200자로 제한한다.
+    cutoff = box_text.find("브랜드 SNS 소식")
+    scoped_text = box_text[:cutoff] if cutoff != -1 else box_text[:200]
+    tokens = {t for t in CAMPAIGN_TOKEN_PATTERN.findall(scoped_text) if t not in CAMPAIGN_TOKEN_NOISE}
+    return tokens
+
 
 def extract_keywords_from_box(box_element, brand: str) -> list[str]:
     # 브랜드검색 박스 안 썸네일 캡션(예: "FW 신상", "맨즈 썸머룩")을 짧은 키워드로 뽑는다. 정교한
@@ -216,8 +239,12 @@ def extract_keywords_from_box(box_element, brand: str) -> list[str]:
     return keywords[:6]
 
 
-def capture_naver(page, brand: str, rows: list, run_date: date, log: list, kw_map: dict):
+def capture_naver(page, brand: str, rows: list, run_date: date, log: list, kw_map: dict) -> set[str]:
+    # 반환값(캠페인 시그니처)은 capture_naver_mobile()이 "PC와 같은 캠페인인지" 비교하는 데 쓴다 —
+    # 네이버 브랜드검색은 PC/모바일이 서로 다른 세션이라 광고가 독립적으로 로테이션되므로, 우연히
+    # 같은 캠페인이 뜨지 않으면 서로 다른 소재가 캡처될 수 있다 (사용자 피드백, 2026-07-31).
     q = urllib.parse.quote(brand)
+    pc_signature: set[str] = set()
     try:
         page.goto(f"https://search.naver.com/search.naver?query={q}", wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(1500)
@@ -244,45 +271,72 @@ def capture_naver(page, brand: str, rows: list, run_date: date, log: list, kw_ma
                     best_box_el, best_area = node, box["height"]
             if best_box_el:
                 kw_map.setdefault(brand, set()).update(extract_keywords_from_box(best_box_el, brand))
+                pc_signature = campaign_signature(best_box_el.inner_text())
         except Exception:
             pass  # 키워드 추출은 부가 기능이라 실패해도 이미지 캡처 자체는 실패로 치지 않는다.
     except Exception as e:
         log.append(f"[FAIL] {brand} · 브랜드검색 PC — {e}")
+    return pc_signature
 
 
-def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: list, kw_map: dict):
+MOBILE_CAMPAIGN_MATCH_ATTEMPTS = 3  # PC와 다른 캠페인이 뜨면 재시도할 최대 횟수 (첫 시도 포함)
+
+
+def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: list, kw_map: dict, pc_signature: set[str]):
     q = urllib.parse.quote(brand)
     # 뷰포트 너비: 실제 폰 너비(390)로 찍으면 하단 썸네일 행이 가로 스크롤 캐러셀이라 3~4개만 보이고
     # 나머지가 잘린다. 모바일 페이지는 반응형이라 너비를 넉넉히(700) 주면 캐러셀 없이 5개가 한 줄에
     # 다 펼쳐져서 스크롤 없는 전체 이미지를 얻을 수 있다 (2026-07-29 확인, 사용자 피드백으로 발견).
     MOBILE_CAPTURE_WIDTH = 700
-    mpage = browser.new_page(viewport={"width": MOBILE_CAPTURE_WIDTH, "height": 2000}, user_agent=MOBILE_UA, is_mobile=True)
+    mpage = None
     try:
-        mpage.goto(f"https://m.search.naver.com/search.naver?query={q}", wait_until="networkidle", timeout=30000)
-        mpage.wait_for_timeout(1500)
+        matched = False
+        for attempt in range(1, MOBILE_CAMPAIGN_MATCH_ATTEMPTS + 1):
+            # 같은 페이지를 새로고침만 하면 광고 서버가 세션에 캠페인을 고정 배정해 매번 똑같은
+            # 소재만 나온다(재시도해도 안 바뀜, 2026-07-31 실사례로 확인). 매 시도마다 쿠키 없는
+            # 새 페이지(=새 세션)를 열어야 다른 캠페인이 나올 여지가 생긴다.
+            if mpage is not None:
+                mpage.close()
+            mpage = browser.new_page(
+                viewport={"width": MOBILE_CAPTURE_WIDTH, "height": 2000}, user_agent=MOBILE_UA, is_mobile=True
+            )
+            mpage.goto(f"https://m.search.naver.com/search.naver?query={q}", wait_until="networkidle", timeout=30000)
+            mpage.wait_for_timeout(1500)
 
-        # "홈페이지" 링크를 앵커로 조상을 한 단계씩 올라가며 박스 높이를 측정한다. 너무 얕으면
-        # 제목줄만 잡히고, 너무 깊으면 페이지 전체(수천px)가 잡히므로, 그 사이의 "합리적인 카드
-        # 크기"(<1200px) 중 가장 큰 것을 브랜드검색 박스로 판단한다. 박스마다 썸네일 개수(3~5개)가
-        # 달라 고정 높이/고정 hop 수로는 브랜드마다 다르게 잘리는 문제가 있었음.
-        home_link = mpage.get_by_text("홈페이지", exact=True).first
-        handle = home_link.element_handle()
-        best_box, best_box_el = None, None
-        for hops in range(2, 14):
-            node = handle.evaluate_handle(
-                """(el, hops) => {
-                    let n = el;
-                    for (let j = 0; j < hops && n.parentElement; j++) n = n.parentElement;
-                    return n;
-                }""",
-                hops,
-            ).as_element()
-            box = node.bounding_box()
-            if box and box["width"] >= 350 and box["height"] < 1200:
-                if not best_box or box["height"] > best_box["height"]:
-                    best_box, best_box_el = box, node
-        if not best_box:
-            raise RuntimeError("브랜드검색 박스 높이를 판단하지 못함")
+            # "홈페이지" 링크를 앵커로 조상을 한 단계씩 올라가며 박스 높이를 측정한다. 너무 얕으면
+            # 제목줄만 잡히고, 너무 깊으면 페이지 전체(수천px)가 잡히므로, 그 사이의 "합리적인 카드
+            # 크기"(<1200px) 중 가장 큰 것을 브랜드검색 박스로 판단한다. 박스마다 썸네일 개수(3~5개)가
+            # 달라 고정 높이/고정 hop 수로는 브랜드마다 다르게 잘리는 문제가 있었음.
+            home_link = mpage.get_by_text("홈페이지", exact=True).first
+            handle = home_link.element_handle()
+            best_box, best_box_el = None, None
+            for hops in range(2, 14):
+                node = handle.evaluate_handle(
+                    """(el, hops) => {
+                        let n = el;
+                        for (let j = 0; j < hops && n.parentElement; j++) n = n.parentElement;
+                        return n;
+                    }""",
+                    hops,
+                ).as_element()
+                box = node.bounding_box()
+                if box and box["width"] >= 350 and box["height"] < 1200:
+                    if not best_box or box["height"] > best_box["height"]:
+                        best_box, best_box_el = box, node
+            if not best_box:
+                raise RuntimeError("브랜드검색 박스 높이를 판단하지 못함")
+
+            # 네이버 브랜드검색은 PC/모바일이 독립적인 세션이라 광고가 따로 로테이션된다 — 우연히 같은
+            # 캠페인이 뜨지 않으면 PC와 다른 소재가 캡처될 수 있다. PC/MO는 같은 컨셉이어야 하므로
+            # 텍스트 토큰이 하나도 안 겹치면(=다른 캠페인으로 판단) 페이지를 새로고침해 재시도한다
+            # (최대 MOBILE_CAMPAIGN_MATCH_ATTEMPTS회 — 사이트에 과도한 요청을 보내지 않도록 소량으로 제한).
+            mo_signature = campaign_signature(best_box_el.inner_text())
+            # 겹치는 단어가 1개뿐이면 흔한 세일 문구가 우연히 겹친 것일 수 있어 부족하다고 본다 —
+            # 진짜 같은 캠페인이면 제목/해시태그 등에서 보통 2개 이상 겹친다.
+            matched = bool(pc_signature) and len(pc_signature & mo_signature) >= 2
+            if matched or not pc_signature or attempt == MOBILE_CAMPAIGN_MATCH_ATTEMPTS:
+                break
+
         top = max(0, int(best_box["y"]) - 4)
         bottom = int(best_box["y"] + best_box["height"]) + 8
         try:
@@ -301,11 +355,13 @@ def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: l
         # 검색창/탭 영역은 제외하고 브랜드검색 박스 자체만 크롭한다 (대시보드 카드 헤더와 중복되므로).
         img = mpage.screenshot(clip={"x": 0, "y": top, "width": MOBILE_CAPTURE_WIDTH, "height": bottom - top})
         save_row(rows, brand, "브랜드검색 MO", img, run_date)
-        log.append(f"[OK] {brand} · 브랜드검색 MO")
+        note = "" if (matched or not pc_signature) else " (PC와 다른 캠페인일 수 있음 — 재시도 후에도 못 맞춤)"
+        log.append(f"[OK] {brand} · 브랜드검색 MO{note}")
     except Exception as e:
         log.append(f"[FAIL] {brand} · 브랜드검색 MO — {e}")
     finally:
-        mpage.close()
+        if mpage is not None:
+            mpage.close()
 
 
 def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
@@ -438,8 +494,8 @@ def run(brands: list[str], run_date: date) -> list[str]:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1400, "height": 1200})
         for brand in brands:
-            capture_naver(page, brand, rows, run_date, log, kw_map)
-            capture_naver_mobile(browser, brand, rows, run_date, log, kw_map)
+            pc_signature = capture_naver(page, brand, rows, run_date, log, kw_map)
+            capture_naver_mobile(browser, brand, rows, run_date, log, kw_map, pc_signature)
             capture_meta(page, brand, rows, run_date, log)
         browser.close()
 
