@@ -98,6 +98,9 @@ def inject_style():
         }
         section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child { display: none; }
 
+        /* 사이드바 세로 블록 기본 간격(16px)이 주차 목록 버튼 사이에서 너무 넓어 보여 좁힌다 */
+        section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 6px; }
+
         /* 사이드바 내 버튼(주차별 아카이브 토글 + 주차 목록) - 테두리 없는 플랫 서브 네비 스타일 */
         section[data-testid="stSidebar"] div[data-testid="stButton"] button {
             background: transparent; border: none; box-shadow: none;
