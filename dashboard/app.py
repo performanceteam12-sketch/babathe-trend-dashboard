@@ -27,9 +27,10 @@ COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷�
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
-# 새로고침(Playwright 스크래핑)은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
-# 브라우저 바이너리가 없어서 실행하면 항상 실패한다. 배포된 대시보드에서는 버튼 자체를 숨기고
-# "로컬 예약 작업으로 자동 갱신됩니다" 안내만 보여준다 (실패 트레이스백을 노출하지 않기 위함).
+# 직접 Playwright를 실행하는 새로고침은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
+# 브라우저 바이너리가 없어서 실행하면 항상 실패한다. 배포된 대시보드에서는 직접 실행 버튼 대신
+# GitHub Actions에 새로고침을 요청하는 remote_refresh_button()을 보여준다 (실패 트레이스백을
+# 노출하지 않기 위함이기도 함).
 IS_LOCAL = sys.platform == "win32"
 
 st.set_page_config(
@@ -415,8 +416,9 @@ REFRESH_SIGNAL_PATH = "data/refresh_signal.json"
 
 def request_remote_refresh(target: str) -> tuple[bool, str]:
     # 배포된(클라우드) 화면에는 Playwright가 없어 직접 스크래핑이 불가능하다. 대신 GitHub API로
-    # 신호 파일을 기록해두면, 로컬 PC의 scraper/remote_refresh_watcher.py가 5분마다 확인해
-    # 그때 실제로 스크래핑한다 (scraper/remote_refresh_watcher.py 참고).
+    # 신호 파일을 기록해두면, GitHub Actions(.github/workflows/remote-refresh-watcher.yml)가
+    # scraper/remote_refresh_watcher.py로 실제 스크래핑한다 (아래에서 workflow_dispatch로 즉시
+    # 트리거하고, 실패해도 5분 cron이 백업으로 처리한다). PC 전원 상태와 무관하게 동작한다.
     import base64
     import json
     from urllib import request as urllib_request
@@ -448,19 +450,34 @@ def request_remote_refresh(target: str) -> tuple[bool, str]:
             headers={**headers, "Content-Type": "application/json"}, method="PUT",
         )
         urllib_request.urlopen(put_req, timeout=10)
-        return True, requested_at
     except Exception as e:  # noqa: BLE001 — 네트워크/권한 오류를 사용자에게 그대로 보여주기 위해 넓게 캐치
         return False, str(e)
+
+    # 신호 파일 커밋에 성공하면 GitHub Actions(remote-refresh-watcher.yml)를 workflow_dispatch로
+    # 즉시 한 번 더 깨운다 — 안 해도 5분 cron이 결국 처리하지만, 이걸 해두면 대부분 몇십 초~1분대로
+    # 반영된다. 토큰에 workflow 권한이 없어 실패해도(예: contents-only 토큰) 조용히 넘어간다 —
+    # 5분 cron이 백업 역할을 하므로 사용자에게 에러로 보여줄 필요는 없다.
+    try:
+        dispatch_req = urllib_request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/remote-refresh-watcher.yml/dispatches",
+            data=json.dumps({"ref": "master"}).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"}, method="POST",
+        )
+        urllib_request.urlopen(dispatch_req, timeout=10)
+    except Exception:  # noqa: BLE001 — best-effort, 5분 cron이 백업이라 실패해도 무시
+        pass
+
+    return True, requested_at
 
 
 def remote_refresh_button(label: str, target: str, key: str):
     if st.button(label, key=key):
         ok, info = request_remote_refresh(target)
         if ok:
-            st.success("요청 완료! 로컬 PC가 5분 내로 확인해 새로고침합니다.")
+            st.success("요청 완료! GitHub Actions가 곧(보통 1~2분 내) 처리합니다.")
         else:
             st.error(f"요청 실패: {info}")
-    st.caption("실제 반영까지 최대 5분 정도 걸릴 수 있습니다 (로컬 PC가 5분마다 확인).")
+    st.caption("PC 전원과 무관하게 GitHub Actions에서 처리됩니다 (최대 5분 내 백업 실행 포함).")
 
 
 def section_naver():
@@ -810,9 +827,13 @@ def page_competitor():
                     st.error("일부 브랜드/슬롯 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
                     st.code(log)
     else:
-        st.info(
-            "이 데이터는 로컬 PC 예약 작업(매주 금요일 10시 아카이브 · 매주 월요일 9시 30분 업데이트)으로 "
-            "자동 갱신됩니다. 배포된 화면에서는 새로고침이 지원되지 않습니다."
+        remote_refresh_button(
+            "새로고침 요청 보내기 (4개 브랜드 브랜드검색+메타소재 전체 재수집)",
+            "competitor_monitor",
+            key="remote_refresh_competitor",
+        )
+        st.caption(
+            "매주 금요일 10시(아카이브) · 매주 월요일 9시 30분(업데이트)에도 자동 갱신됩니다."
         )
 
     # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).

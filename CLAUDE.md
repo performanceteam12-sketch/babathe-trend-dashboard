@@ -77,6 +77,7 @@
 - 네이버 데이터랩 스크래퍼(`naver_datalab_scraper.py`)는 별도 스케줄 없이 대시보드 "새로고침" 버튼으로만 수동 실행 (저빈도·수동 트리거 원칙 유지).
 - `BabaderDashboardKeepAwake`(신규, 2026-07-28): Windows 작업 스케줄러 등록, **매일 00:00부터 6시간마다** `scraper/keep_dashboard_awake.py` 실행 — 배포된 Streamlit Cloud 앱은 무료 플랜이라 방문자가 없으면 "잠자기 모드"(Zzzz... 화면)로 전환되는데, 이를 막기 위해 Playwright로 실제 방문(+잠자기 화면이면 "Yes, get this app back up!" 클릭)을 자동화한 것. `dashboard_url`은 `.streamlit/secrets.toml`에서 읽는다.
 - 스케줄 등록/변경: `schtasks /create` 또는 `/change /tn "<task명>" ...`, 확인은 `schtasks /query /tn "<task명>" /v /fo LIST`.
+- **`BabaderRemoteRefreshWatcher`(2026-09-04 삭제)**: 배포 화면의 "새로고침 요청" 신호를 5분마다 확인하던 로컬 작업. PC 화면 잠금 시 Playwright가 실행 안 되는 문제(오류 0x800710E0)로 2026-08-06에 이미 GitHub Actions(`.github/workflows/remote-refresh-watcher.yml`)로 감시를 옮겼는데, 이 로컬 작업을 그때 지우지 않아 계속 중복으로 5분마다 `git pull`을 실행 중이었다 — 로컬 Streamlit이 5분마다 자동 리로드되는 원인이었다. 이제 원격 새로고침 감시는 PC 상태와 무관하게 GitHub Actions에서만 처리된다.
 
 ## 배포 (Streamlit Community Cloud)
 - **배포 완료 (2026-07-28)**: https://babathe-trend-dashboard.streamlit.app/ — GitHub 저장소(`performanceteam12-sketch/babathe-trend-dashboard`, Public)를 연결해 배포. 뷰어 접근은 특정 이메일로 제한(Settings > Sharing)하도록 안내함.
@@ -84,6 +85,7 @@
 - **배포된 앱은 로컬 PC의 data/ 폴더가 아니라 GitHub 저장소 내용을 그대로 읽는다.** 그래서 로컬에서 예약 실행되는 `weekly_archive.py`/`monday_update.py`는 스크래핑 직후 `scraper/git_sync.py`(`sync_to_github()`)로 변경된 데이터를 자동 커밋+푸시한다 — 이게 없으면 배포된 대시보드가 영원히 첫 배포 시점 데이터로 멈춰 있게 된다.
 - `git_sync.py`는 `data/competitor_monitor/images/` 폴더 **전체**가 아니라 `competitor_monitor.csv`에 실제로 참조된 파일만 커밋한다 — 스크래핑 과정에서 생기는 미참조 후보 이미지(콘텐츠 판별 실패로 버려진 후보 등)까지 매번 커밋하면 저장소 용량이 무한정 불어나기 때문 (최초 배포 시점 확인: 로컬 이미지 폴더 3452개 파일 중 실제 참조되는 건 32개뿐이었음).
 - `.gitignore`의 `data/competitor_monitor/images/*` 제외 규칙은 2026-07-28에 제거함(배포를 위해 이미지도 커밋해야 해서). 대신 `git add`할 때 참조 파일만 골라 추가하는 방식으로 저장소 비대화를 방지.
+- **배포 화면에서 실시간 새로고침 (`naver`/`app_search`/`competitor_monitor`, 2026-09-04 competitor_monitor 추가)**: 배포된 화면은 Playwright가 없어 직접 스크래핑할 수 없으므로, `dashboard/app.py`의 `request_remote_refresh()`가 GitHub API로 `data/refresh_signal.json`을 커밋하고 `.github/workflows/remote-refresh-watcher.yml`(GitHub Actions, `workflow_dispatch`로 즉시 트리거 + 5분 cron 백업)이 이를 감지해 `scraper/remote_refresh_watcher.py`로 실제 스크래핑을 수행한다. 대상별 실행 스크립트·동기화 경로는 `remote_refresh_watcher.py`의 `SCRIPT_MAP`에서 관리 (경쟁사 모니터링은 `git_sync.referenced_image_paths()`로 참조 이미지만 골라 커밋). PC 전원/화면잠금 상태와 완전히 무관하게 동작한다.
 
 ## 슬랙 알림 (`scraper/monday_update.py`)
 - **설정 완료 (2026-07-28)**: `.streamlit/secrets.toml`에 `slack_webhook_url` 저장됨 (마케팅12팀 슬랙 워크스페이스의 "Competitor Monitor Bot" 앱 → Incoming Webhooks, `#mkt_바바더닷컴` 채널로 연결). 테스트 메시지 발송·수신 확인 완료.
