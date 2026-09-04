@@ -21,7 +21,8 @@
   - **이용약관**: shinsegaev.com, babathe.com(자사)은 robots.txt가 일반 크롤러를 허용(`Allow: /`)해 문제 없음. thehandsome.com, display.wconcept.co.kr은 화이트리스트 방식으로 일반 크롤러를 차단하나, 사용자 승인 하에 저빈도(주 1회 목표)로 진행 중.
   - 채널 목록은 `dashboard/app.py`의 `APP_CHANNELS`와 `scraper/app_search_scraper.py`의 `CHANNELS`에서 관리 (양쪽 이름이 일치해야 함)
 - `data/competitor_monitor/competitor_monitor.csv`: `date, brand, slot, image_file, uploaded_at` (+ 이미지 원본은 `data/competitor_monitor/images/`)
-  - 대상 브랜드: 더한섬닷컴, 신세계V, W컨셉, 바바더닷컴 (고정 4개)
+  - 대상 브랜드: 더한섬닷컴, SSF, W컨셉, 바바더닷컴 (고정 4개)
+  - **2026-09-04: '신세계V' → 'SSF'로 교체** (사용자 요청, 차주 월요일 자동 실행부터 적용). Meta 페이지ID는 `PAGE_ID_MAP["SSF"] = "1055697371181404"`("SSF SHOP" 계정, 2026-09-04 확인). `data/competitor_monitor/*.csv`의 과거 행은 여전히 `신세계V`로 남아있으므로, 이전 주차 아카이브를 조회하면 "SSF: 미등록"으로 보일 수 있음(브랜드명이 바뀐 것일 뿐 데이터 유실 아님) — 과거 주차는 사이드바 "주차별 아카이브"에서 조회 시 이 점 감안. 실시간 인기 검색어(`APP_CHANNELS`, shinsegaev.com 검색창 캡처)는 아직 그대로 신세계V 유지 — SSF샵(ssfshop.com)은 robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라(`User-agent: *` `Disallow: /`, ClaudeBot 등 지정 봇만 예외) 새 스크래퍼 개발 전 별도 확인·승인 필요.
   - 슬롯: 브랜드검색 PC, 브랜드검색 MO, 메타소재 1, 메타소재 2 (브랜드당 4개)
   - 출처: `scraper/competitor_monitor_scraper.py` 자동 캡처 (search.naver.com 브랜드검색 영역 + Meta 광고 라이브러리) 또는 대시보드 수동 업로드
   - **정확도**: 브랜드검색은 화면 스크린샷 그대로, 사이트 구조 변경 시 깨질 수 있음. 메타소재는 스크린샷이 아니라 실제 광고 이미지 파일을 CDN URL에서 직접 다운로드해 저장 (2026-07-29부터, 이전엔 카드 전체를 스크린샷했음).
@@ -71,9 +72,10 @@
 - 앞으로 스크래퍼를 새로 추가할 때도 이 패턴을 그대로 따를 것 (안 그러면 같은 문제 재발).
 
 ## 자동화 스케줄
-- `BabaderWeeklyArchive`: Windows 작업 스케줄러 등록, **매주 금요일 오전 10:00**에 `scraper/weekly_archive.py` 실행 (2026-07-28 최초 등록 시엔 월요일 정오였으나, 사용자 요청으로 2026-07-28에 금요일 10시로 변경) — `competitor_monitor_scraper.py`의 `run()`을 재사용해 브랜드검색+메타소재를 재수집하면서 동시에 `archive_weeks.csv`에 그 주의 "NN년 N월 N주차" 라벨을 기록한다.
-- `BabaderMondayUpdate`(신규, 2026-07-28): Windows 작업 스케줄러 등록, **매주 월요일 오전 09:30**에 `scraper/monday_update.py` 실행 — 영업회의 전 경쟁사 모니터링(브랜드검색+메타소재)만 재수집하고, 완료되면 슬랙 웹훅으로 결과(성공/실패 요약)를 알린다. 이 실행은 `archive_weeks.csv`에 기록하지 않는다(그건 금요일 아카이브의 역할 — 월요일 실행은 그냥 "최신 스냅샷 갱신"용).
-- 기존 `BabaderCompetitorMonitor`(목요일 17:00, 경쟁사 모니터링만 재수집)는 2026-07-28에 삭제 — 금(아카이브)/월(업데이트+알림) 2개 스케줄로 통합됐기 때문에 별도 목요일 실행이 불필요해짐.
+- **주간 아카이브 (`.github/workflows/weekly-archive.yml`, GitHub Actions, 2026-09-04 이전)**: 매주 월요일 오전 10:00(KST) `scraper/weekly_archive.py` 실행 — `competitor_monitor_scraper.py`의 `run()`으로 브랜드검색+메타소재를 재수집하고, `archive_weeks.csv`에 그 주의 "NN년 N월 N주차" 라벨을 기록하고, 슬랙으로 결과를 알린다(영업회의 준비용).
+  - **왜 이전했나**: 원래 금요일 10시(`BabaderWeeklyArchive`, 아카이브 전용)와 월요일 9시 30분(`BabaderMondayUpdate`, 최신 스냅샷+슬랙 알림 전용) 두 개의 로컬 Windows 작업 스케줄러 작업으로 나뉘어 있었는데, **등록 이후 단 한 번도 성공적으로 완료된 적이 없었다** — `archive_weeks.csv`를 실제로 커밋한 건 전체 기간 3건뿐이고 전부 수동/과거 세션에서 추가된 것, 자동 실행 자체의 커밋은 0건 (2026-09-04 사용자 문의로 발견). 원인은 `BabaderRemoteRefreshWatcher`/`keep_dashboard_awake`와 같은 문제 — PC 화면이 잠긴 상태에서는 Windows 스케줄러가 Playwright를 실행하지 못한다(오류 0x800710E0). 사용자 요청으로 두 스케줄을 월요일 10시 GitHub Actions 1개로 통합(재스크래핑 포함, `monday_update.py`는 `weekly_archive.py`에 흡수되어 삭제) — PC 상태와 무관하게 항상 실행되고 스크래핑도 주 1회로 줄어 저빈도 원칙에 더 부합한다.
+  - **슬랙 웹훅 시크릿**: GitHub Actions에서는 리포지토리 시크릿 `SLACK_WEBHOOK_URL`(+선택적 `DASHBOARD_URL`)을 환경변수로 주입받는다 — 로컬 `.streamlit/secrets.toml`과 별개로 **GitHub 저장소 Settings > Secrets and variables > Actions에 직접 등록해야 함** (아직 미등록이면 슬랙 알림은 조용히 스킵되고 로그에 `[SKIP]`이 남는다 — 아카이브 자체는 정상 진행). 로컬에서 수동 실행할 때는 기존처럼 `.streamlit/secrets.toml`을 그대로 사용.
+  - 기존 `BabaderCompetitorMonitor`(목요일 17:00, 경쟁사 모니터링만 재수집)는 2026-07-28에 삭제 — 금/월 2개 스케줄로 통합됐기 때문에 별도 목요일 실행이 불필요해짐 (그 금/월 체계도 위 사유로 2026-09-04에 다시 월요일 1개로 통합됨).
 - 네이버 데이터랩 스크래퍼(`naver_datalab_scraper.py`)는 별도 스케줄 없이 대시보드 "새로고침" 버튼으로만 수동 실행 (저빈도·수동 트리거 원칙 유지).
 - `BabaderDashboardKeepAwake`(신규, 2026-07-28): Windows 작업 스케줄러 등록, **매일 00:00부터 6시간마다** `scraper/keep_dashboard_awake.py` 실행 — 배포된 Streamlit Cloud 앱은 무료 플랜이라 방문자가 없으면 "잠자기 모드"(Zzzz... 화면)로 전환되는데, 이를 막기 위해 Playwright로 실제 방문(+잠자기 화면이면 "Yes, get this app back up!" 클릭)을 자동화한 것. `dashboard_url`은 `.streamlit/secrets.toml`에서 읽는다.
 - 스케줄 등록/변경: `schtasks /create` 또는 `/change /tn "<task명>" ...`, 확인은 `schtasks /query /tn "<task명>" /v /fo LIST`.
@@ -82,15 +84,16 @@
 ## 배포 (Streamlit Community Cloud)
 - **배포 완료 (2026-07-28)**: https://babathe-trend-dashboard.streamlit.app/ — GitHub 저장소(`performanceteam12-sketch/babathe-trend-dashboard`, Public)를 연결해 배포. 뷰어 접근은 특정 이메일로 제한(Settings > Sharing)하도록 안내함.
 - GitHub 저장소는 공개(Public)이지만 앱 뷰어 접근은 이메일 화이트리스트로 제한 — 무료 플랜에서도 가능한 기능.
-- **배포된 앱은 로컬 PC의 data/ 폴더가 아니라 GitHub 저장소 내용을 그대로 읽는다.** 그래서 로컬에서 예약 실행되는 `weekly_archive.py`/`monday_update.py`는 스크래핑 직후 `scraper/git_sync.py`(`sync_to_github()`)로 변경된 데이터를 자동 커밋+푸시한다 — 이게 없으면 배포된 대시보드가 영원히 첫 배포 시점 데이터로 멈춰 있게 된다.
+- **배포된 앱은 로컬 PC의 data/ 폴더가 아니라 GitHub 저장소 내용을 그대로 읽는다.** 그래서 GitHub Actions에서 실행되는 `weekly_archive.py`(및 로컬에서 수동 실행하는 각 스크래퍼)는 스크래핑 직후 `scraper/git_sync.py`(`sync_to_github()`)로 변경된 데이터를 자동 커밋+푸시한다 — 이게 없으면 배포된 대시보드가 영원히 첫 배포 시점 데이터로 멈춰 있게 된다.
 - `git_sync.py`는 `data/competitor_monitor/images/` 폴더 **전체**가 아니라 `competitor_monitor.csv`에 실제로 참조된 파일만 커밋한다 — 스크래핑 과정에서 생기는 미참조 후보 이미지(콘텐츠 판별 실패로 버려진 후보 등)까지 매번 커밋하면 저장소 용량이 무한정 불어나기 때문 (최초 배포 시점 확인: 로컬 이미지 폴더 3452개 파일 중 실제 참조되는 건 32개뿐이었음).
 - `.gitignore`의 `data/competitor_monitor/images/*` 제외 규칙은 2026-07-28에 제거함(배포를 위해 이미지도 커밋해야 해서). 대신 `git add`할 때 참조 파일만 골라 추가하는 방식으로 저장소 비대화를 방지.
-- **배포 화면에서 실시간 새로고침 (`naver`/`app_search`/`competitor_monitor`, 2026-09-04 competitor_monitor 추가)**: 배포된 화면은 Playwright가 없어 직접 스크래핑할 수 없으므로, `dashboard/app.py`의 `request_remote_refresh()`가 GitHub API로 `data/refresh_signal.json`을 커밋하고 `.github/workflows/remote-refresh-watcher.yml`(GitHub Actions, `workflow_dispatch`로 즉시 트리거 + 5분 cron 백업)이 이를 감지해 `scraper/remote_refresh_watcher.py`로 실제 스크래핑을 수행한다. 대상별 실행 스크립트·동기화 경로는 `remote_refresh_watcher.py`의 `SCRIPT_MAP`에서 관리 (경쟁사 모니터링은 `git_sync.referenced_image_paths()`로 참조 이미지만 골라 커밋). PC 전원/화면잠금 상태와 완전히 무관하게 동작한다.
+- **배포 화면에서 실시간 새로고침 (`naver`/`app_search`/`competitor_monitor`, 2026-09-04 competitor_monitor 추가)**: 배포된 화면은 Playwright가 없어 직접 스크래핑할 수 없으므로, `dashboard/app.py`의 `request_remote_refresh()`가 GitHub API로 `data/refresh_signal.json`을 커밋하고 곧바로 `.github/workflows/remote-refresh-watcher.yml`(GitHub Actions)을 `workflow_dispatch`로 트리거해 `scraper/remote_refresh_watcher.py`가 실제 스크래핑을 수행한다. 대상별 실행 스크립트·동기화 경로는 `remote_refresh_watcher.py`의 `SCRIPT_MAP`에서 관리 (경쟁사 모니터링은 `git_sync.referenced_image_paths()`로 참조 이미지만 골라 커밋). PC 전원/화면잠금 상태와 완전히 무관하게 동작한다.
+  - **5분 주기 cron 폴링 제거 (2026-09-04)**: 원래 이 워크플로에 `workflow_dispatch`와 함께 5분 cron 백업도 걸려 있었는데, `git_sync.py`의 push에 재시도 로직이 없던 버그와 겹쳐 "신호 파일 삭제 커밋"의 푸시가 실패할 때마다 다음 cron이 같은 요청을 다시 "대기 중"으로 보고 재처리하는 무한 루프가 있었다 — 실제 버튼 클릭은 14번뿐이었는데 naver/app_search 처리 커밋이 수백 건 쌓였다(2026-09-04 사용자 문의로 발견, robots.txt로 막힌 사이트에 저빈도 원칙보다 훨씬 잦은 요청이 감). `git_sync.py`는 push 실패 시 `pull --rebase` 후 재시도하도록 고쳤고(재발 방지), cron 자체도 저빈도 원칙과 안 맞아 완전히 없앴다 — 지금은 사용자가 버튼을 누른 순간(workflow_dispatch)에만 실행되고, 그 dispatch 호출이 실패하면(백업이 없으므로) 조용히 넘어가지 않고 화면에 에러로 표시한다.
 
-## 슬랙 알림 (`scraper/monday_update.py`)
+## 슬랙 알림 (`scraper/weekly_archive.py`, 2026-09-04까지는 `monday_update.py`)
 - **설정 완료 (2026-07-28)**: `.streamlit/secrets.toml`에 `slack_webhook_url` 저장됨 (마케팅12팀 슬랙 워크스페이스의 "Competitor Monitor Bot" 앱 → Incoming Webhooks, `#mkt_바바더닷컴` 채널로 연결). 테스트 메시지 발송·수신 확인 완료.
-- 웹훅 URL은 `.streamlit/secrets.toml`의 `slack_webhook_url` 키에서 읽는다 (이 파일은 `.gitignore`에 이미 포함되어 커밋되지 않음 — 새 시크릿 저장 위치를 만들지 않고 기존 Streamlit 시크릿 파일을 재사용).
-- 웹훅 URL이 없으면 조용히 건너뛰지 않고 `[SKIP] slack_webhook_url이 .streamlit/secrets.toml에 설정되어 있지 않아...`를 stderr에 남긴다.
+- **2026-09-04부터 실행 주체가 GitHub Actions로 바뀌면서 웹훅 URL 조회 우선순위도 바뀜**: 환경변수 `SLACK_WEBHOOK_URL`(GitHub Actions 리포지토리 시크릿에서 주입) → 없으면 로컬 `.streamlit/secrets.toml`의 `slack_webhook_url` 순으로 확인한다. **GitHub Actions 쪽 리포지토리 시크릿(`SLACK_WEBHOOK_URL`, 선택적으로 `DASHBOARD_URL`)은 별도로 등록해야 한다** — 로컬 `secrets.toml`은 `.gitignore`에 포함되어 있어 GitHub Actions 러너에는 존재하지 않기 때문. 아직 등록 전이라면 아카이브 자체는 정상 진행되고 슬랙 알림만 조용히 스킵된다.
+- 웹훅 URL이 없으면 조용히 건너뛰지 않고 `[SKIP] SLACK_WEBHOOK_URL(Actions 시크릿) / slack_webhook_url(로컬 secrets.toml)이 설정되어 있지 않아...`를 stderr에 남긴다.
 - 메시지는 성공/실패에 따라 다르게 구성: 실패(`[FAIL]`) 로그가 있으면 실패 브랜드/슬롯을 나열, 없으면 "업데이트 완료 (영업회의 준비 완료)" 요약만 보낸다.
 - 새 의존성 추가 없이 표준 라이브러리만 사용(`tomllib`, `urllib.request`) — Python 3.11+ 필요(현재 3.12 사용 중이라 문제 없음).
 

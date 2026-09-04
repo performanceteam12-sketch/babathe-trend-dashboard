@@ -29,12 +29,16 @@ IMG_DIR = ROOT / "data" / "competitor_monitor" / "images"
 CSV_PATH = ROOT / "data" / "competitor_monitor" / "competitor_monitor.csv"
 KEYWORDS_CSV_PATH = ROOT / "data" / "competitor_monitor" / "keywords.csv"
 
-BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
+BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "바바더닷컴"]
+# **2026-09-04: '신세계V' → 'SSF'로 교체** (사용자 요청, 차주 월요일 실행부터 적용). 브랜드검색은
+# 이 이름을 그대로 naver 검색어로 쓰므로(capture_naver의 urllib.parse.quote(brand)) 실제 브랜드검색
+# 광고가 노출되는 정확한 검색어인지 첫 실행 때 로그로 확인 필요 — 다르면 "SSF"를 다른 표기(예: "SSF샵")로
+# 조정해야 할 수 있다.
 
 # 2026-07-24 기준 확인된 각 브랜드의 실제 메타 광고 라이브러리 계정명 (아바타 이미지 alt 텍스트 필터링용)
 ACCOUNT_MAP = {
     "더한섬닷컴": "한섬",
-    "신세계V": "VERY SHINSEGAE",
+    "SSF": "SSF SHOP",
     "W컨셉": "W컨셉",
     "바바더닷컴": "바바더닷컴",
 }
@@ -44,7 +48,9 @@ ACCOUNT_MAP = {
 # 달리 무관한 광고가 섞이지 않는다.
 PAGE_ID_MAP = {
     "더한섬닷컴": "724882231232775",
-    "신세계V": "256002414775220",
+    # SSF SHOP, 2026-09-04 확인 (Meta 광고 라이브러리 자동완성에서 "SSF" 검색 → 팔로워 2.3만·쇼핑몰
+    # 계정 확인 후 클릭해 얻음)
+    "SSF": "1055697371181404",
     "W컨셉": "189176731145096",
     "바바더닷컴": "451533041676254",
 }

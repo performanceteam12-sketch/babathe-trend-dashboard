@@ -1,0 +1,47 @@
+name: Weekly archive
+
+# 매주 월요일 오전 10시(KST)에 경쟁사 모니터링을 재수집하고 그 주의 아카이브 라벨을 기록,
+# 슬랙으로 결과를 알린다 (영업회의 준비용).
+#
+# 원래 금요일 10시(주간 아카이브)/월요일 9시 30분(최신 스냅샷 갱신) 두 개의 로컬 Windows
+# 작업 스케줄러 작업으로 나뉘어 있었으나, PC 화면 잠금 상태에서 스케줄러가 Playwright를 못
+# 띄우는 문제(오류 0x800710E0)로 등록 이후 한 번도 성공한 적이 없었다. remote-refresh-watcher/
+# keep-dashboard-awake와 동일하게 GitHub Actions로 옮기면서 두 스케줄을 월요일 10시 하나로
+# 통합했다 (2026-09-04, 사용자 요청) — scraper/weekly_archive.py 참고.
+#
+# cron은 UTC 기준이라 10:00 KST = 01:00 UTC.
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run weekly archive
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+        run: python scraper/weekly_archive.py

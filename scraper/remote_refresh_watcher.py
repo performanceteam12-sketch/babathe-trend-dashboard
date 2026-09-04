@@ -1,18 +1,21 @@
 """
 원격 새로고침 감시자 — 배포된 대시보드(Streamlit Cloud)는 Playwright가 없어 직접 스크래핑할 수
 없다. 대신 배포된 화면의 "새로고침 요청" 버튼을 누르면 GitHub API로 data/refresh_signal.json에
-요청을 기록하고, 이 스크립트가 (GitHub Actions에서, .github/workflows/remote-refresh-watcher.yml)
-5분마다 그 파일을 확인해 실제 스크래핑을 수행한다. dashboard/app.py가 신호 파일을 커밋한 직후
-같은 워크플로를 workflow_dispatch로 즉시 트리거하기도 해서, 보통은 5분을 다 기다리지 않는다.
+요청을 기록하고 곧바로 이 워크플로(.github/workflows/remote-refresh-watcher.yml)를
+workflow_dispatch로 트리거해, 이 스크립트가 그 파일을 확인해 실제 스크래핑을 수행한다.
 
 원래는 로컬 PC의 Windows 작업 스케줄러가 이 역할을 했으나, PC 화면이 잠긴 상태에서는 스케줄러가
 Playwright를 실행하지 못하는 문제(오류 0x800710E0)가 있어 2026-08-06에 GitHub Actions로 옮겼다.
-로컬 작업(BabaderRemoteRefreshWatcher)은 그 뒤로도 중복 실행되고 있다가 2026-09-04에 삭제됨 —
-지금은 PC 상태와 무관하게 GitHub Actions에서만 처리된다.
+로컬 작업(BabaderRemoteRefreshWatcher)은 그 뒤로도 중복 실행되고 있다가 2026-09-04에 삭제됨.
 
-이렇게 해도 실제 사이트 스크래핑 자체는 "사용자가 명시적으로 요청했을 때만" 실행된다 —
-5분마다 도는 건 GitHub 저장소 확인(가벼운 git pull)일 뿐, 네이버/더한섬닷컴 등 대상 사이트에는
-아무 요청도 가지 않는다. 즉 기존 저빈도·수동 트리거 원칙은 그대로 유지된다.
+**2026-09-04: 5분 주기 cron 폴링을 제거하고 workflow_dispatch 전용으로 전환.** 원래는 cron이
+5분마다 신호 파일 존재 여부를 확인해 dispatch가 실패해도 백업 처리를 해줬는데, git_sync.py의
+push에 재시도 로직이 없던 것과 겹쳐 "신호 삭제 커밋"의 푸시가 실패할 때마다 신호가 원격에
+그대로 남아 다음 cron이 같은 요청을 또 처리하는 무한 재시도 버그가 있었다 — 실제 버튼 클릭은
+14번뿐인데 naver/app_search 처리 커밋이 수백 건씩 쌓였다(robots.txt로 막힌 사이트에 저빈도
+원칙보다 훨씬 잦은 요청이 감, 사용자 문의로 발견). git_sync.py는 push 실패 시 재시도하도록
+고쳤지만(재발 방지), 애초에 상시 폴링 자체가 저빈도 원칙과 안 맞아 cron은 완전히 없앴다 —
+이제 사용자가 새로고침 버튼을 눌렀을 때(workflow_dispatch)만 실행된다.
 
 처리 후에는 신호 파일을 삭제해 같은 요청이 중복 처리되지 않게 한다.
 """

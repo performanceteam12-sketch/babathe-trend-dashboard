@@ -1,9 +1,11 @@
 """바바더닷컴 패션 트렌드 대시보드. 새 날짜 데이터가 추가되면 새로고침 버튼으로 다시 스캔한다."""
 
+import io
 import os
 import subprocess
 import sys
 import uuid
+import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -23,7 +25,10 @@ APP_SEARCH_SCRAPER_SCRIPT = ROOT / "scraper" / "app_search_scraper.py"
 COMPETITOR_SCRAPER_SCRIPT = ROOT / "scraper" / "competitor_monitor_scraper.py"
 
 APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
-COMPETITOR_BRANDS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
+# 경쟁사 모니터링(브랜드검색+메타소재)은 2026-09-04부터 '신세계V' 대신 'SSF'를 추적한다(사용자 요청).
+# APP_CHANNELS(실시간 인기 검색어, shinsegaev.com 검색창 캡처)는 아직 그대로 — SSF샵(ssfshop.com)은
+# robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라 새 스크래퍼 작업으로 별도 확인·승인 필요.
+COMPETITOR_BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "바바더닷컴"]
 COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
@@ -416,9 +421,14 @@ REFRESH_SIGNAL_PATH = "data/refresh_signal.json"
 
 def request_remote_refresh(target: str) -> tuple[bool, str]:
     # 배포된(클라우드) 화면에는 Playwright가 없어 직접 스크래핑이 불가능하다. 대신 GitHub API로
-    # 신호 파일을 기록해두면, GitHub Actions(.github/workflows/remote-refresh-watcher.yml)가
-    # scraper/remote_refresh_watcher.py로 실제 스크래핑한다 (아래에서 workflow_dispatch로 즉시
-    # 트리거하고, 실패해도 5분 cron이 백업으로 처리한다). PC 전원 상태와 무관하게 동작한다.
+    # 신호 파일을 기록해두고, GitHub Actions(.github/workflows/remote-refresh-watcher.yml)를
+    # workflow_dispatch로 즉시 트리거해 scraper/remote_refresh_watcher.py가 실제 스크래핑하게
+    # 한다. PC 전원 상태와 무관하게 동작한다.
+    # 2026-09-04: 예전엔 5분 cron이 폴링하며 "혹시 dispatch가 실패해도" 백업 처리를 해줬는데,
+    # git_sync.py의 push 재시도 로직 부재와 겹쳐 신호가 하나 처리될 때마다 몇 주간 수백 번씩
+    # 중복 재처리되는 버그가 있었다 (robots.txt로 막힌 사이트에 저빈도 원칙보다 훨씬 잦은 요청).
+    # cron을 완전히 없앴으므로 이제 dispatch 호출 실패는 조용히 넘어가지 않고 사용자에게 그대로
+    # 보여준다 — 백업이 없으니 실패를 감추면 그 요청은 영영 처리되지 않는다.
     import base64
     import json
     from urllib import request as urllib_request
@@ -453,10 +463,10 @@ def request_remote_refresh(target: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001 — 네트워크/권한 오류를 사용자에게 그대로 보여주기 위해 넓게 캐치
         return False, str(e)
 
-    # 신호 파일 커밋에 성공하면 GitHub Actions(remote-refresh-watcher.yml)를 workflow_dispatch로
-    # 즉시 한 번 더 깨운다 — 안 해도 5분 cron이 결국 처리하지만, 이걸 해두면 대부분 몇십 초~1분대로
-    # 반영된다. 토큰에 workflow 권한이 없어 실패해도(예: contents-only 토큰) 조용히 넘어간다 —
-    # 5분 cron이 백업 역할을 하므로 사용자에게 에러로 보여줄 필요는 없다.
+    # 신호 파일 커밋 후 GitHub Actions(remote-refresh-watcher.yml)를 workflow_dispatch로 깨운다.
+    # 더 이상 cron 백업이 없으므로 여기서 실패하면 그 요청은 처리되지 않는다 — 조용히 삼키지 않고
+    # 사용자에게 알린다(신호 파일 자체는 이미 커밋됐으니, GitHub Actions 탭에서 수동으로
+    # "Run workflow"를 눌러도 처리할 수 있다).
     try:
         dispatch_req = urllib_request.Request(
             f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/remote-refresh-watcher.yml/dispatches",
@@ -464,8 +474,11 @@ def request_remote_refresh(target: str) -> tuple[bool, str]:
             headers={**headers, "Content-Type": "application/json"}, method="POST",
         )
         urllib_request.urlopen(dispatch_req, timeout=10)
-    except Exception:  # noqa: BLE001 — best-effort, 5분 cron이 백업이라 실패해도 무시
-        pass
+    except Exception as e:  # noqa: BLE001 — dispatch 실패를 사용자에게 그대로 보여주기 위해 넓게 캐치
+        return False, (
+            f"신호 파일은 저장됐지만 GitHub Actions 실행 요청이 실패했습니다: {e} "
+            "— GitHub 저장소 Actions 탭에서 'Remote refresh watcher'를 수동으로 실행해주세요."
+        )
 
     return True, requested_at
 
@@ -474,10 +487,10 @@ def remote_refresh_button(label: str, target: str, key: str):
     if st.button(label, key=key):
         ok, info = request_remote_refresh(target)
         if ok:
-            st.success("요청 완료! GitHub Actions가 곧(보통 1~2분 내) 처리합니다.")
+            st.success("요청 완료! GitHub Actions가 실행 중입니다 (보통 1~2분 내 반영).")
         else:
             st.error(f"요청 실패: {info}")
-    st.caption("PC 전원과 무관하게 GitHub Actions에서 처리됩니다 (최대 5분 내 백업 실행 포함).")
+    st.caption("PC 전원과 무관하게 클릭 즉시 GitHub Actions에서 처리됩니다 (주기적 자동 폴링 없음).")
 
 
 def section_naver():
@@ -801,6 +814,19 @@ def load_archive_weeks() -> pd.DataFrame:
     return pd.read_csv(COMPETITOR_ARCHIVE_CSV, encoding="utf-8-sig", keep_default_na=False)
 
 
+def build_competitor_images_zip(day_df: pd.DataFrame) -> bytes:
+    # 브랜드/슬롯별 폴더 구조로 담아야 압축을 풀었을 때 바로 폴더로 확인할 수 있다 (사용자 요청).
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for _, row in day_df.iterrows():
+            src = COMPETITOR_IMG_DIR / row["image_file"]
+            if not src.exists():
+                continue
+            slot_slug = row["slot"].replace(" ", "_")
+            zf.write(src, arcname=f"{row['brand']}/{slot_slug}{src.suffix}")
+    return buf.getvalue()
+
+
 def page_competitor():
     default_view_date = latest_competitor_date() or date.today()
     view_date_for_badge = st.session_state.get("competitor_view_date", default_view_date)
@@ -852,6 +878,16 @@ def page_competitor():
         ("모니터링 브랜드", f"{len(COMPETITOR_BRANDS)}개", "🏷️"),
         (f"{view_date.isoformat()} 등록된 이미지", f"{len(day_df)} / {len(COMPETITOR_BRANDS) * len(COMPETITOR_SLOTS)}", "🖼️"),
     ])
+
+    if not day_df.empty:
+        st.download_button(
+            "이미지 다운로드 (현재 조회 중인 날짜 전체)",
+            data=build_competitor_images_zip(day_df),
+            file_name=f"경쟁사모니터링_{view_date.isoformat()}.zip",
+            mime="application/zip",
+            key=f"download_competitor_images_{view_date.isoformat()}",
+        )
+        st.caption("브랜드별 폴더로 정리된 zip으로 받아집니다 — 압축을 풀면 폴더로 바로 확인할 수 있습니다.")
 
     import html as html_lib
 
