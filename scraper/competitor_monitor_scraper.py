@@ -64,6 +64,22 @@ PAGE_ID_MAP = {
     # 확인되기 전까지 메타소재는 "[SKIP] ... PAGE_ID_MAP에 페이지ID 미등록"으로 건너뛴다.
 }
 
+# 2026-10-14 추가: 대시보드 신규 슬롯 "홈페이지 PC"용 공식몰 홈 URL. 추가 전 각 도메인 robots.txt를
+# 확인했다 — 더한섬닷컴/W컨셉/바바더닷컴은 app_search_scraper.py가 이미 같은 도메인을 캡처 중이라
+# (사용자 승인된 저빈도 원칙 유지) 재확인 없이 그대로 사용. 미샤/잇미샤(sisun.com)와 온앤온(lounge-b.com)은
+# robots.txt에 `Disallow: /`가 없어(특정 하위 경로만 제한) 신규로 추가했다.
+# **SSF(ssfshop.com)는 제외** — robots.txt가 `User-agent: * / Disallow: /`로 일반 크롤러를 전면
+# 차단하는 화이트리스트 사이트라(2026-10-14 확인), CLAUDE.md 원칙대로 사용자 별도 승인 전에는 자동
+# 캡처하지 않는다. SSF의 "홈페이지 PC"는 당분간 대시보드에서 수동 업로드로만 채운다.
+HOMEPAGE_URL_MAP = {
+    "더한섬닷컴": "https://www.thehandsome.com/",
+    "W컨셉": "https://display.wconcept.co.kr/",
+    "미샤": "https://www.sisun.com/MICHAA",
+    "잇미샤": "https://www.sisun.com/ITMICHAA",
+    "온앤온": "https://lounge-b.com/",
+    "바바더닷컴": "https://www.babathe.com/",
+}
+
 # 브랜드별로 항상 나오는 상시 캠페인이라 다양성이 떨어지는 키워드 — 메타소재 선택 시 후순위로
 # 미룬다(완전히 제외하지는 않음, 다른 소재가 정말 없으면 최대 1개까지는 허용). 사용자 요청, 2026-07-31.
 DEPRIORITIZE_KEYWORDS = {
@@ -379,6 +395,24 @@ def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: l
             mpage.close()
 
 
+def capture_homepage(page, brand: str, rows: list, run_date: date, log: list):
+    # 전체 페이지가 아니라 뷰포트(첫 화면)만 캡처한다 — 기존 경쟁사 동향 스프레드시트의 "홈페이지/
+    # 이벤트 배너" 캡처도 스크롤 없이 보이는 영역 기준이었고, 전체 페이지를 캡처하면 쇼핑몰마다
+    # 길이가 들쭉날쭉해 대시보드 카드 비교가 어려워진다.
+    url = HOMEPAGE_URL_MAP.get(brand)
+    if not url:
+        log.append(f"[SKIP] {brand} · 홈페이지 — HOMEPAGE_URL_MAP에 URL 미등록 (robots.txt 정책상 보류 중이거나 미확인)")
+        return
+    try:
+        page.goto(url, wait_until="load", timeout=45000)
+        page.wait_for_timeout(2000)
+        img = page.screenshot(full_page=False)
+        save_row(rows, brand, "홈페이지 PC", img, run_date)
+        log.append(f"[OK] {brand} · 홈페이지 PC")
+    except Exception as e:
+        log.append(f"[FAIL] {brand} · 홈페이지 PC — {e}")
+
+
 def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
     page_id = PAGE_ID_MAP.get(brand)
     account_name = ACCOUNT_MAP.get(brand, brand)
@@ -509,6 +543,7 @@ def run(brands: list[str], run_date: date) -> list[str]:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1400, "height": 1200})
         for brand in brands:
+            capture_homepage(page, brand, rows, run_date, log)
             pc_signature = capture_naver(page, brand, rows, run_date, log, kw_map)
             capture_naver_mobile(browser, brand, rows, run_date, log, kw_map, pc_signature)
             capture_meta(page, brand, rows, run_date, log)
