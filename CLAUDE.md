@@ -21,9 +21,9 @@
   - **이용약관**: shinsegaev.com, babathe.com(자사)은 robots.txt가 일반 크롤러를 허용(`Allow: /`)해 문제 없음. thehandsome.com, display.wconcept.co.kr은 화이트리스트 방식으로 일반 크롤러를 차단하나, 사용자 승인 하에 저빈도(주 1회 목표)로 진행 중.
   - 채널 목록은 `dashboard/app.py`의 `APP_CHANNELS`와 `scraper/app_search_scraper.py`의 `CHANNELS`에서 관리 (양쪽 이름이 일치해야 함)
 - `data/competitor_monitor/competitor_monitor.csv`: `date, brand, slot, image_file, uploaded_at` (+ 이미지 원본은 `data/competitor_monitor/images/`)
-  - 대상 브랜드: 더한섬닷컴, SSF, W컨셉, 바바더닷컴 (고정 4개)
+  - 대상 브랜드: 더한섬닷컴, SSF, W컨셉, 미샤, 잇미샤, 온앤온, 바바더닷컴 (고정 7개, 2026-10-14 미샤/잇미샤/온앤온 추가)
   - **2026-09-04: '신세계V' → 'SSF'로 교체** (사용자 요청, 차주 월요일 자동 실행부터 적용). Meta 페이지ID는 `PAGE_ID_MAP["SSF"] = "1055697371181404"`("SSF SHOP" 계정, 2026-09-04 확인). `data/competitor_monitor/*.csv`의 과거 행은 여전히 `신세계V`로 남아있으므로, 이전 주차 아카이브를 조회하면 "SSF: 미등록"으로 보일 수 있음(브랜드명이 바뀐 것일 뿐 데이터 유실 아님) — 과거 주차는 사이드바 "주차별 아카이브"에서 조회 시 이 점 감안. 실시간 인기 검색어(`APP_CHANNELS`, shinsegaev.com 검색창 캡처)는 아직 그대로 신세계V 유지 — SSF샵(ssfshop.com)은 robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라(`User-agent: *` `Disallow: /`, ClaudeBot 등 지정 봇만 예외) 새 스크래퍼 개발 전 별도 확인·승인 필요.
-  - 슬롯: 브랜드검색 PC, 브랜드검색 MO, 메타소재 1, 메타소재 2 (브랜드당 4개)
+  - 슬롯: 홈페이지 PC, 브랜드검색 PC, 브랜드검색 MO, 메타소재 1, 메타소재 2 (브랜드당 5개, 2026-10-14 홈페이지 PC 추가 — 기존 경쟁사 동향 스프레드시트의 '브랜드 홈페이지/이벤트 배너' 캡처를 재현)
   - 출처: `scraper/competitor_monitor_scraper.py` 자동 캡처 (search.naver.com 브랜드검색 영역 + Meta 광고 라이브러리) 또는 대시보드 수동 업로드
   - **정확도**: 브랜드검색은 화면 스크린샷 그대로, 사이트 구조 변경 시 깨질 수 있음. 메타소재는 스크린샷이 아니라 실제 광고 이미지 파일을 CDN URL에서 직접 다운로드해 저장 (2026-07-29부터, 이전엔 카드 전체를 스크린샷했음).
   - **브랜드검색은 "그 순간 노출된 광고 1개"를 그대로 캡처하는 구조라 여러 후보 중 골라 넣을 수 없다** (Meta소재처럼 후보 목록을 받아 우선순위로 거르는 방식이 아님). 특정 캠페인(예: 상시 프로모션)을 피하고 싶어도 스크래퍼 쪽에서 제어 불가 — 네이버가 노출하는 광고 자체가 바뀌어야 다른 소재가 캡처된다 (2026-07-31 확인, 사용자 요청으로 조사 후 한계 공유함).

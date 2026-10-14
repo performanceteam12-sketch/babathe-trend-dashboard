@@ -29,11 +29,17 @@ IMG_DIR = ROOT / "data" / "competitor_monitor" / "images"
 CSV_PATH = ROOT / "data" / "competitor_monitor" / "competitor_monitor.csv"
 KEYWORDS_CSV_PATH = ROOT / "data" / "competitor_monitor" / "keywords.csv"
 
-BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "바바더닷컴"]
+BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "미샤", "잇미샤", "온앤온", "바바더닷컴"]
 # **2026-09-04: '신세계V' → 'SSF'로 교체** (사용자 요청, 차주 월요일 실행부터 적용). 브랜드검색은
 # 이 이름을 그대로 naver 검색어로 쓰므로(capture_naver의 urllib.parse.quote(brand)) 실제 브랜드검색
 # 광고가 노출되는 정확한 검색어인지 첫 실행 때 로그로 확인 필요 — 다르면 "SSF"를 다른 표기(예: "SSF샵")로
 # 조정해야 할 수 있다.
+# **2026-10-14: 미샤/잇미샤/온앤온 추가** (사용자 요청, 대시보드 COMPETITOR_BRANDS와 동일하게 확장).
+# 이 3개 브랜드는 ACCOUNT_MAP/PAGE_ID_MAP에 아직 등록되지 않아 메타소재 수집은 자동으로 SKIP 처리된다
+# (아래 run_for_brand의 PAGE_ID_MAP.get(brand) 체크) — 실제 메타 광고 라이브러리 페이지ID를 확인해
+# 등록해야 메타 소재 자동 수집이 동작한다. 브랜드검색(Naver)은 brand 문자열을 그대로 검색어로 쓰므로
+# 바로 시도되지만, 정확한 검색어인지(예: "미샤" 단독으로 브랜드검색 광고가 노출되는지) 첫 실행 로그로
+# 확인 필요.
 
 # 2026-07-24 기준 확인된 각 브랜드의 실제 메타 광고 라이브러리 계정명 (아바타 이미지 alt 텍스트 필터링용)
 ACCOUNT_MAP = {
@@ -41,6 +47,7 @@ ACCOUNT_MAP = {
     "SSF": "SSF SHOP",
     "W컨셉": "W컨셉",
     "바바더닷컴": "바바더닷컴",
+    # 미샤/잇미샤/온앤온: 실제 메타 광고 라이브러리 계정명 미확인 — PAGE_ID_MAP 등록 시 함께 확인 필요.
 }
 
 # 2026-07-29 확인: 검색창에 브랜드 계정명을 한 글자씩 타이핑하면 뜨는 자동완성(광고주 정확 일치)을
@@ -53,6 +60,8 @@ PAGE_ID_MAP = {
     "SSF": "1055697371181404",
     "W컨셉": "189176731145096",
     "바바더닷컴": "451533041676254",
+    # 미샤/잇미샤/온앤온: 2026-10-14 기준 page_id 미확인 — 임의로 추정해 넣지 않음(브랜드 오인 위험).
+    # 확인되기 전까지 메타소재는 "[SKIP] ... PAGE_ID_MAP에 페이지ID 미등록"으로 건너뛴다.
 }
 
 # 브랜드별로 항상 나오는 상시 캠페인이라 다양성이 떨어지는 키워드 — 메타소재 선택 시 후순위로
@@ -553,7 +562,7 @@ def main():
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--brands", nargs="*", default=BRANDS, help="캡처할 브랜드 목록 (기본: 전체 4개)")
+    parser.add_argument("--brands", nargs="*", default=BRANDS, help="캡처할 브랜드 목록 (기본: 전체 7개)")
     args = parser.parse_args()
 
     log = run(args.brands, date.today())

@@ -28,8 +28,8 @@ APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 # 경쟁사 모니터링(브랜드검색+메타소재)은 2026-09-04부터 '신세계V' 대신 'SSF'를 추적한다(사용자 요청).
 # APP_CHANNELS(실시간 인기 검색어, shinsegaev.com 검색창 캡처)는 아직 그대로 — SSF샵(ssfshop.com)은
 # robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라 새 스크래퍼 작업으로 별도 확인·승인 필요.
-COMPETITOR_BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "바바더닷컴"]
-COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
+COMPETITOR_BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "미샤", "잇미샤", "온앤온", "바바더닷컴"]
+COMPETITOR_SLOTS = ["홈페이지 PC", "브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
 # 직접 Playwright를 실행하는 새로고침은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
@@ -231,22 +231,23 @@ def inject_style():
 
         .media-empty {
             aspect-ratio: 4/3; background: #FAF8FE; border: 1px dashed #DDD3F5; border-radius: 12px;
-            display: flex; align-items: center; justify-content: center; color: #C2B8E0; font-size: 13px;
+            display: flex; align-items: center; justify-content: center; color: #9992B3; font-size: 14px;
+            font-weight: 600; text-align: center; padding: 12px;
         }
-        /* 미디어 카드: 기존 경쟁사 동향 시트의 "이미지 아래 회색 캡션 바" 레이아웃 재현 */
-        .rank-card.media-card { padding: 14px 14px 0; }
+        /* 미디어 카드: 기존 경쟁사 동향 시트의 "이미지 아래 회색 캡션 바" 레이아웃 재현 — 가독성을 위해 기존 대비 확대 */
+        .rank-card.media-card { padding: 16px 16px 0; }
         .media-caption {
             display: flex; align-items: baseline; justify-content: center; gap: 8px;
-            background: #F5F2FB; border-radius: 0 0 12px 12px; margin: 10px -14px -14px;
-            padding: 9px 10px; text-align: center;
+            background: #F5F2FB; border-radius: 0 0 14px 14px; margin: 12px -16px -16px;
+            padding: 12px 12px; text-align: center;
         }
-        .media-caption-title { font-weight: 700; font-size: 13px; color: #4C4569; }
-        .media-caption-meta { font-size: 11.5px; color: #9992B3; }
+        .media-caption-title { font-weight: 800; font-size: 15px; color: #2E2748; }
+        .media-caption-meta { font-size: 12.5px; color: #9992B3; }
 
-        /* 서브섹션 라벨(브랜드검색/메타 광고 소재)을 회색 바 형태로 — 기존 시트의 "1-2. 브랜드검색" 행 헤더 느낌 */
+        /* 서브섹션 라벨(홈페이지/브랜드검색/메타 광고 소재) — 기존 시트의 굵은 블랙 헤더 바 느낌을 재현해 가독성 강화 */
         .group-label {
-            font-size: 13px; font-weight: 700; color: #4C4569; margin: 4px 0 10px;
-            background: #F5F2FB; padding: 8px 14px; border-radius: 10px;
+            font-size: 14.5px; font-weight: 800; color: #FFFFFF; margin: 6px 0 12px;
+            background: #4C4569; padding: 10px 16px; border-radius: 10px; letter-spacing: -0.01em;
         }
         .keyword-pill {
             display: inline-block; background: #EDE6FC; color: #7C3AED; font-weight: 600;
@@ -411,7 +412,7 @@ def run_app_search_scraper() -> tuple[bool, str]:
 
 
 def run_competitor_scraper() -> tuple[bool, str]:
-    # 브랜드검색 PC/MO + 메타 소재까지 4개 브랜드 전부 도는 데 시간이 걸려서 넉넉히 잡는다.
+    # 홈페이지/브랜드검색 PC/MO + 메타 소재까지 7개 브랜드 전부 도는 데 시간이 걸려서 넉넉히 잡는다.
     return run_scraper_script(COMPETITOR_SCRAPER_SCRIPT, timeout=240)
 
 
@@ -832,7 +833,7 @@ def page_competitor():
     view_date_for_badge = st.session_state.get("competitor_view_date", default_view_date)
     page_header(
         "경쟁사 모니터링",
-        "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재 2종을 자동 캡처합니다 (수동 업로드도 가능).",
+        "브랜드별 홈페이지, 브랜드검색 PC/모바일 노출 화면, 메타 광고 소재를 자동 캡처합니다 (수동 업로드도 가능).",
         badge_text=week_label(view_date_for_badge),
     )
 
@@ -844,7 +845,7 @@ def page_competitor():
     if IS_LOCAL:
         col1, _ = st.columns([1, 3])
         with col1:
-            if st.button("새로고침 (4개 브랜드 브랜드검색+메타소재 전체 재수집)"):
+            if st.button("새로고침 (7개 브랜드 홈페이지+브랜드검색+메타소재 전체 재수집)"):
                 with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
                     ok, log = run_competitor_scraper()
                 if ok:
@@ -854,7 +855,7 @@ def page_competitor():
                     st.code(log)
     else:
         remote_refresh_button(
-            "새로고침 요청 보내기 (4개 브랜드 브랜드검색+메타소재 전체 재수집)",
+            "새로고침 요청 보내기 (7개 브랜드 홈페이지+브랜드검색+메타소재 전체 재수집)",
             "competitor_monitor",
             key="remote_refresh_competitor",
         )
@@ -965,14 +966,18 @@ def page_competitor():
                     return p, f"{view_date.isoformat()} 등록"
             return None, "미등록"
 
-        st.markdown(f'<div class="group-label">{i + 1}-1. 브랜드검색</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label">{i + 1}-1. 홈페이지</div>', unsafe_allow_html=True)
+        home_image_path, home_meta = slot_lookup("홈페이지 PC")
+        render_media_card("홈페이지 PC", home_meta, home_image_path, empty_msg="미등록 — 메인 화면/이벤트 배너 캡처 또는 업로드 필요")
+
+        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 브랜드검색</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["브랜드검색 PC", "브랜드검색 MO"], cols):
             with col:
                 image_path, meta = slot_lookup(slot)
                 render_media_card(slot, meta, image_path)
 
-        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 메타 광고 소재</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-3. 메타 광고 소재</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["메타소재 1", "메타소재 2"], cols):
             with col:
