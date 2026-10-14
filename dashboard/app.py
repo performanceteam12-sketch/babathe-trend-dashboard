@@ -29,7 +29,7 @@ APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 # APP_CHANNELS(실시간 인기 검색어, shinsegaev.com 검색창 캡처)는 아직 그대로 — SSF샵(ssfshop.com)은
 # robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라 새 스크래퍼 작업으로 별도 확인·승인 필요.
 COMPETITOR_BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "미샤", "잇미샤", "온앤온", "바바더닷컴"]
-COMPETITOR_SLOTS = ["홈페이지 PC", "브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
+COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
 # 직접 Playwright를 실행하는 새로고침은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
@@ -833,7 +833,7 @@ def page_competitor():
     view_date_for_badge = st.session_state.get("competitor_view_date", default_view_date)
     page_header(
         "경쟁사 모니터링",
-        "브랜드별 홈페이지, 브랜드검색 PC/모바일 노출 화면, 메타 광고 소재를 자동 캡처합니다 (수동 업로드도 가능).",
+        "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재 2종을 자동 캡처합니다 (수동 업로드도 가능).",
         badge_text=week_label(view_date_for_badge),
     )
 
@@ -845,7 +845,7 @@ def page_competitor():
     if IS_LOCAL:
         col1, _ = st.columns([1, 3])
         with col1:
-            if st.button("새로고침 (7개 브랜드 홈페이지+브랜드검색+메타소재 전체 재수집)"):
+            if st.button("새로고침 (7개 브랜드 브랜드검색+메타소재 전체 재수집)"):
                 with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
                     ok, log = run_competitor_scraper()
                 if ok:
@@ -855,7 +855,7 @@ def page_competitor():
                     st.code(log)
     else:
         remote_refresh_button(
-            "새로고침 요청 보내기 (7개 브랜드 홈페이지+브랜드검색+메타소재 전체 재수집)",
+            "새로고침 요청 보내기 (7개 브랜드 브랜드검색+메타소재 전체 재수집)",
             "competitor_monitor",
             key="remote_refresh_competitor",
         )
@@ -966,18 +966,14 @@ def page_competitor():
                     return p, f"{view_date.isoformat()} 등록"
             return None, "미등록"
 
-        st.markdown(f'<div class="group-label">{i + 1}-1. 홈페이지</div>', unsafe_allow_html=True)
-        home_image_path, home_meta = slot_lookup("홈페이지 PC")
-        render_media_card("홈페이지 PC", home_meta, home_image_path, empty_msg="미등록 — 메인 화면/이벤트 배너 캡처 또는 업로드 필요")
-
-        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 브랜드검색</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label">{i + 1}-1. 브랜드검색</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["브랜드검색 PC", "브랜드검색 MO"], cols):
             with col:
                 image_path, meta = slot_lookup(slot)
                 render_media_card(slot, meta, image_path)
 
-        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-3. 메타 광고 소재</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 메타 광고 소재</div>', unsafe_allow_html=True)
         cols = st.columns(2)
         for slot, col in zip(["메타소재 1", "메타소재 2"], cols):
             with col:
