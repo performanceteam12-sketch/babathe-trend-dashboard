@@ -846,9 +846,14 @@ def page_competitor():
         unsafe_allow_html=True,
     )
 
-    if IS_LOCAL:
-        col1, _ = st.columns([1, 3])
-        with col1:
+    # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).
+    view_date = st.session_state.get("competitor_view_date", default_view_date)
+    df = load_competitor()
+    day_df = df[df["date"] == view_date.isoformat()] if not df.empty else df
+
+    col_refresh, col_download = st.columns([2, 1])
+    with col_refresh:
+        if IS_LOCAL:
             if st.button("새로고침 (7개 브랜드 브랜드검색+메타소재 전체 재수집)"):
                 with st.spinner("브랜드검색·메타 소재를 순서대로 캡처 중... (몇 분 걸릴 수 있습니다)"):
                     ok, log = run_competitor_scraper()
@@ -857,60 +862,25 @@ def page_competitor():
                 else:
                     st.error("일부 브랜드/슬롯 수집 실패 — 사이트 구조가 바뀌었을 수 있습니다.")
                     st.code(log)
-    else:
-        remote_refresh_button(
-            "새로고침 요청 보내기 (7개 브랜드 브랜드검색+메타소재 전체 재수집)",
-            "competitor_monitor",
-            key="remote_refresh_competitor",
-        )
-        st.caption(
-            "매주 금요일 10시(아카이브) · 매주 월요일 9시 30분(업데이트)에도 자동 갱신됩니다."
-        )
-
-    # 주차 선택은 사이드바의 "경쟁사 모니터링 > 주차별 아카이브"에서 한다 (main()에서 session_state로 주입).
-    view_date = st.session_state.get("competitor_view_date", default_view_date)
-    st.caption(f"현재 보고 있는 주차: {week_label(view_date)} (매주 금요일 오전 10시 자동 아카이브 · 매주 월요일 오전 9시 30분 자동 업데이트+슬랙 알림)")
-    with st.expander("직접 날짜 선택"):
-        manual_date = st.date_input("조회 날짜", value=view_date, key="competitor_manual_date")
-        if manual_date != view_date:
-            st.session_state["competitor_view_date"] = manual_date
-            st.rerun()
-
-    df = load_competitor()
-    day_df = df[df["date"] == view_date.isoformat()] if not df.empty else df
-
-    stat_row([
-        ("모니터링 브랜드", f"{len(COMPETITOR_BRANDS)}개", "🏷️"),
-        (f"{view_date.isoformat()} 등록된 이미지", f"{len(day_df)} / {len(COMPETITOR_BRANDS) * len(COMPETITOR_SLOTS)}", "🖼️"),
-    ])
-
-    if not day_df.empty:
-        st.download_button(
-            "이미지 다운로드 (현재 조회 중인 날짜 전체)",
-            data=build_competitor_images_zip(day_df),
-            file_name=f"경쟁사모니터링_{view_date.isoformat()}.zip",
-            mime="application/zip",
-            key=f"download_competitor_images_{view_date.isoformat()}",
-        )
-        st.caption("브랜드별 폴더로 정리된 zip으로 받아집니다 — 압축을 풀면 폴더로 바로 확인할 수 있습니다.")
+        else:
+            remote_refresh_button(
+                "새로고침 요청 보내기 (7개 브랜드 브랜드검색+메타소재 전체 재수집)",
+                "competitor_monitor",
+                key="remote_refresh_competitor",
+            )
+    with col_download:
+        if not day_df.empty:
+            st.download_button(
+                "이미지 다운로드",
+                data=build_competitor_images_zip(day_df),
+                file_name=f"경쟁사모니터링_{view_date.isoformat()}.zip",
+                mime="application/zip",
+                key=f"download_competitor_images_{view_date.isoformat()}",
+            )
 
     import html as html_lib
 
     brand_slugs = {brand: f"brand-{i}" for i, brand in enumerate(COMPETITOR_BRANDS)}
-
-    st.markdown('<div class="group-label">이번 주 요약 — 브랜드를 클릭하면 아래 상세로 이동합니다</div>', unsafe_allow_html=True)
-    summary_cards = ""
-    for brand in COMPETITOR_BRANDS:
-        comment = load_comment_for(brand, view_date)
-        comment_html = (
-            f'<div class="summary-comment">{html_lib.escape(comment)}</div>' if comment
-            else '<div class="summary-empty">코멘트 미작성</div>'
-        )
-        summary_cards += (
-            f'<a class="summary-card" href="#{brand_slugs[brand]}">'
-            f'<div class="summary-brand">{html_lib.escape(brand)}</div>{comment_html}</a>'
-        )
-    st.markdown(f'<div class="summary-grid">{summary_cards}</div>', unsafe_allow_html=True)
 
     for i, brand in enumerate(COMPETITOR_BRANDS):
         st.markdown(
@@ -965,9 +935,15 @@ def page_competitor():
             match = brand_df[brand_df["slot"] == slot] if not brand_df.empty else brand_df
             if not match.empty:
                 row = match.iloc[0]
-                p = COMPETITOR_IMG_DIR / row["image_file"]
-                if p.exists():
-                    return p, f"{view_date.isoformat()} 등록"
+                image_file = row["image_file"]
+                # image_file이 빈 문자열(명시적으로 비워진 슬롯)이면 COMPETITOR_IMG_DIR / "" 는
+                # 이미지 폴더 자기 자신(디렉터리)이 되어 .exists()가 True를 반환해버린다 — 그 상태로
+                # render_media_card가 읽으려 하면 IsADirectoryError가 난다 (2026-10-19 확인된 버그).
+                # 파일명이 실제로 있고 "파일"일 때만 유효한 이미지로 취급한다.
+                if image_file:
+                    p = COMPETITOR_IMG_DIR / image_file
+                    if p.is_file():
+                        return p, f"{view_date.isoformat()} 등록"
             return None, "미등록"
 
         st.markdown(f'<div class="group-label">{i + 1}-1. 브랜드검색</div>', unsafe_allow_html=True)
