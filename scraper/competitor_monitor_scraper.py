@@ -37,9 +37,12 @@ BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "미샤", "잇미샤", "온앤온
 # **2026-10-14: 미샤/잇미샤/온앤온 추가** (사용자 요청, 대시보드 COMPETITOR_BRANDS와 동일하게 확장).
 # 이 3개 브랜드는 ACCOUNT_MAP/PAGE_ID_MAP에 아직 등록되지 않아 메타소재 수집은 자동으로 SKIP 처리된다
 # (아래 run_for_brand의 PAGE_ID_MAP.get(brand) 체크) — 실제 메타 광고 라이브러리 페이지ID를 확인해
-# 등록해야 메타 소재 자동 수집이 동작한다. 브랜드검색(Naver)은 brand 문자열을 그대로 검색어로 쓰므로
-# 바로 시도되지만, 정확한 검색어인지(예: "미샤" 단독으로 브랜드검색 광고가 노출되는지) 첫 실행 로그로
-# 확인 필요.
+# 등록해야 메타 소재 자동 수집이 동작한다.
+# **2026-10-19 확인된 문제**: "미샤"를 그대로 naver 검색어로 쓰면 더 유명한 화장품 브랜드 MISSHA
+# (에이블씨엔씨)가 잡힌다 — 우리가 추적하려는 건 여성 패션 브랜드 MICHAA(시선인터내셔널)다. 실행 로그의
+# 자동 추출 키워드가 "NAD크림", "비비부머" 등 화장품 용어였던 것으로 확인됨. NAVER_QUERY_MAP으로
+# 검색어만 "미샤 MICHAA"로 바꿔 보정한다 (저장되는 brand 표기 자체는 "미샤" 그대로 유지 — 대시보드
+# COMPETITOR_BRANDS와 일치시켜야 하므로).
 
 # 2026-07-24 기준 확인된 각 브랜드의 실제 메타 광고 라이브러리 계정명 (아바타 이미지 alt 텍스트 필터링용)
 ACCOUNT_MAP = {
@@ -48,6 +51,13 @@ ACCOUNT_MAP = {
     "W컨셉": "W컨셉",
     "바바더닷컴": "바바더닷컴",
     # 미샤/잇미샤/온앤온: 실제 메타 광고 라이브러리 계정명 미확인 — PAGE_ID_MAP 등록 시 함께 확인 필요.
+}
+
+# 2026-10-19: naver 브랜드검색 검색어가 brand 표기와 달라야 하는 경우의 보정 맵. capture_naver /
+# capture_naver_mobile은 이 맵에 있으면 검색어로 쓰고, 없으면 brand를 그대로 쓴다. "미샤"는 화장품
+# 브랜드 MISSHA와 이름이 겹쳐 그냥 검색하면 엉뚱한 브랜드가 잡히므로 "미샤 MICHAA"로 보정한다.
+NAVER_QUERY_MAP = {
+    "미샤": "미샤 MICHAA",
 }
 
 # 2026-07-29 확인: 검색창에 브랜드 계정명을 한 글자씩 타이핑하면 뜨는 자동완성(광고주 정확 일치)을
@@ -258,7 +268,7 @@ def capture_naver(page, brand: str, rows: list, run_date: date, log: list, kw_ma
     # 반환값(캠페인 시그니처)은 capture_naver_mobile()이 "PC와 같은 캠페인인지" 비교하는 데 쓴다 —
     # 네이버 브랜드검색은 PC/모바일이 서로 다른 세션이라 광고가 독립적으로 로테이션되므로, 우연히
     # 같은 캠페인이 뜨지 않으면 서로 다른 소재가 캡처될 수 있다 (사용자 피드백, 2026-07-31).
-    q = urllib.parse.quote(brand)
+    q = urllib.parse.quote(NAVER_QUERY_MAP.get(brand, brand))
     pc_signature: set[str] = set()
     try:
         page.goto(f"https://search.naver.com/search.naver?query={q}", wait_until="networkidle", timeout=30000)
@@ -298,7 +308,7 @@ MOBILE_CAMPAIGN_MATCH_ATTEMPTS = 3  # PC와 다른 캠페인이 뜨면 재시도
 
 
 def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: list, kw_map: dict, pc_signature: set[str]):
-    q = urllib.parse.quote(brand)
+    q = urllib.parse.quote(NAVER_QUERY_MAP.get(brand, brand))
     # 뷰포트 너비: 실제 폰 너비(390)로 찍으면 하단 썸네일 행이 가로 스크롤 캐러셀이라 3~4개만 보이고
     # 나머지가 잘린다. 모바일 페이지는 반응형이라 너비를 넉넉히(700) 주면 캐러셀 없이 5개가 한 줄에
     # 다 펼쳐져서 스크롤 없는 전체 이미지를 얻을 수 있다 (2026-07-29 확인, 사용자 피드백으로 발견).
