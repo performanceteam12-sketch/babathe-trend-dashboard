@@ -399,6 +399,27 @@ def capture_naver_mobile(browser, brand: str, rows: list, run_date: date, log: l
             mpage.close()
 
 
+COOKIE_CONSENT_BUTTON_TEXTS = [
+    "모든 쿠키 허용", "필수 쿠키만 허용", "허용", "Allow all cookies", "Decline optional cookies",
+]
+
+
+def dismiss_cookie_consent(page):
+    # GitHub Actions 러너는 로컬/인터랙티브 브라우저와 접속 IP 지역대가 달라, Meta가 쿠키 동의
+    # 배너를 띄우는 경우가 있다 — 이게 떠 있으면 실제 광고 카드가 DOM에 렌더링되지 않아
+    # "게재 중인 광고를 찾지 못함"으로 잘못 보고된다 (2026-10-19 확인된 원인 후보). 떠 있으면
+    # 눌러서 치운다 — 없으면(대부분의 경우) 그냥 넘어간다.
+    for text in COOKIE_CONSENT_BUTTON_TEXTS:
+        try:
+            btn = page.get_by_role("button", name=text, exact=False)
+            if btn.count() > 0 and btn.first.is_visible():
+                btn.first.click(timeout=3000)
+                page.wait_for_timeout(1500)
+                return
+        except Exception:
+            continue
+
+
 def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
     page_id = PAGE_ID_MAP.get(brand)
     account_name = ACCOUNT_MAP.get(brand, brand)
@@ -416,10 +437,21 @@ def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
     try:
         page.goto(url, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(2500)
+        dismiss_cookie_consent(page)
         markers = page.locator("text=라이브러리 ID:")
+        try:
+            # networkidle만으로는 광고 카드가 다 그려지기 전에 넘어올 수 있다 — "라이브러리 ID:"가
+            # 하나라도 나타날 때까지 최대 10초 추가로 기다린다 (없으면 TimeoutError, 아래에서 처리).
+            markers.first.wait_for(state="attached", timeout=10000)
+        except Exception:
+            pass
         total = markers.count()
         if total == 0:
-            log.append(f"[FAIL] {brand} · 메타소재 — 게재 중인 광고를 찾지 못함")
+            # 원인 진단을 위해 실패 시점 페이지 상태를 함께 남긴다 (쿠키 동의 배너, 로그인 요구,
+            # 국가 제한 등 — GitHub Actions 환경에서만 재현되고 로컬/인터랙티브 브라우저에서는 정상
+            # 동작하는 경우가 있어, 다음 실패 때 원인을 바로 알 수 있도록 디버그 정보를 남긴다).
+            snippet = page.inner_text("body")[:200].replace("\n", " ")
+            log.append(f"[FAIL] {brand} · 메타소재 — 게재 중인 광고를 찾지 못함 (페이지 상태: {snippet})")
             return
 
         candidates = []
@@ -526,8 +558,20 @@ def run(brands: list[str], run_date: date) -> list[str]:
     log = []
     kw_map: dict = {}
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1400, "height": 1200})
+        # GitHub Actions 러너의 기본 headless Chromium은 Meta 쪽에서 자동화 트래픽으로 감지되거나
+        # (navigator.webdriver=true) 접속 지역대가 달라 쿠키 동의 배너가 뜨는 등, 로컬/인터랙티브
+        # 브라우저와 다르게 동작해 메타소재 수집이 "게재 중인 광고를 찾지 못함"으로 실패하는 사례가
+        # 있었다 (2026-10-19). --disable-blink-features=AutomationControlled와 일반 데스크톱
+        # User-Agent/locale 지정으로 자동화 신호를 최대한 줄인다.
+        browser = p.chromium.launch(args=["--disable-blink-features=AutomationControlled"])
+        page = browser.new_page(
+            viewport={"width": 1400, "height": 1200},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+            ),
+            locale="ko-KR",
+        )
         for brand in brands:
             pc_signature = capture_naver(page, brand, rows, run_date, log, kw_map)
             capture_naver_mobile(browser, brand, rows, run_date, log, kw_map, pc_signature)
