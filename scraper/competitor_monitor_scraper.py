@@ -521,10 +521,12 @@ def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
         preferred = [c for c in content_only if not any(t in c["text"] for t in deprioritize_terms)]
         deprioritized = [c for c in content_only if any(t in c["text"] for t in deprioritize_terms)]
 
-        chosen = preferred[:2]
-        if len(chosen) < 2 and deprioritized:
+        # 2026-10-19: 카드 2개 → 5개로 확장 (사용자 요청). 조건에 맞는 소재가 5개 미만이면 있는
+        # 만큼만 채우고 억지로 채우지 않는다 — 대시보드도 실제 저장된 슬롯만 카드로 렌더링한다.
+        chosen = preferred[:5]
+        if len(chosen) < 5 and deprioritized:
             # 후순위 키워드(예: 상시 캠페인) 소재는 정말 다른 소재가 없을 때만, 그것도 최대 1개까지만 허용.
-            chosen += deprioritized[: min(2 - len(chosen), 1)]
+            chosen += deprioritized[: min(5 - len(chosen), 1)]
 
         if not chosen:
             log.append(
@@ -544,11 +546,13 @@ def capture_meta(page, brand: str, rows: list, run_date: date, log: list):
                 f"[OK] {brand} · 메타소재 {idx} ({tag}, 라이브러리ID:{c['library_id']}, {start_line})"
             )
 
-        # 조건에 맞는 소재가 1개뿐이면 2번째 슬롯은 비워둔다(예전 이미지가 남아있지 않도록 명시적으로
-        # "미등록" 처리) — 없는데 억지로 중복/부적합 이미지를 채우지 않는다 (사용자 요청, 2026-07-29).
-        if len(chosen) == 1:
-            clear_slot(rows, brand, "메타소재 2", run_date)
-            log.append(f"[INFO] {brand} · 메타소재 2 — 조건에 맞는 서로 다른 소재가 1개뿐이라 비워둠")
+        # chosen이 5개 미만이면 남은 슬롯(예: 메타소재 3~5)은 비워둔다(예전 실행에서 저장된 이미지가
+        # 남아있지 않도록 명시적으로 "미등록" 처리) — 없는데 억지로 중복/부적합 이미지를 채우지 않는다
+        # (사용자 요청, 2026-07-29 / 2026-10-19 5개로 확장하며 동일 원칙 유지).
+        if len(chosen) < 5:
+            for idx in range(len(chosen) + 1, 6):
+                clear_slot(rows, brand, f"메타소재 {idx}", run_date)
+            log.append(f"[INFO] {brand} · 메타소재 {len(chosen)}개만 조건에 맞아 나머지는 비워둠")
     except Exception as e:
         log.append(f"[FAIL] {brand} · 메타소재 — {e}")
 

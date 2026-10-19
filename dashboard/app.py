@@ -29,7 +29,11 @@ APP_CHANNELS = ["더한섬닷컴", "신세계V", "W컨셉", "바바더닷컴"]
 # APP_CHANNELS(실시간 인기 검색어, shinsegaev.com 검색창 캡처)는 아직 그대로 — SSF샵(ssfshop.com)은
 # robots.txt가 일반 크롤러를 차단하는 화이트리스트 사이트라 새 스크래퍼 작업으로 별도 확인·승인 필요.
 COMPETITOR_BRANDS = ["더한섬닷컴", "SSF", "W컨셉", "미샤", "잇미샤", "온앤온", "바바더닷컴"]
-COMPETITOR_SLOTS = ["브랜드검색 PC", "브랜드검색 MO", "메타소재 1", "메타소재 2"]
+COMPETITOR_SLOTS = [
+    "브랜드검색 PC", "브랜드검색 MO",
+    "메타소재 1", "메타소재 2", "메타소재 3", "메타소재 4", "메타소재 5",
+]
+META_SLOTS = ["메타소재 1", "메타소재 2", "메타소재 3", "메타소재 4", "메타소재 5"]
 NAV_ITEMS = ["경쟁사 모니터링", "실시간 인기 검색어"]
 
 # 직접 Playwright를 실행하는 새로고침은 사용자 PC(Windows)에서만 동작한다 — Streamlit Cloud(Linux)에는
@@ -833,7 +837,7 @@ def page_competitor():
     view_date_for_badge = st.session_state.get("competitor_view_date", default_view_date)
     page_header(
         "경쟁사 모니터링",
-        "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재 2종을 자동 캡처합니다 (수동 업로드도 가능).",
+        "브랜드별 브랜드검색 PC/모바일 노출 화면과 메타 광고 소재(최신순 최대 5개)를 자동 캡처합니다 (수동 업로드도 가능).",
         badge_text=week_label(view_date_for_badge),
     )
 
@@ -974,11 +978,20 @@ def page_competitor():
                 render_media_card(slot, meta, image_path)
 
         st.markdown(f'<div class="group-label" style="margin-top:16px;">{i + 1}-2. 메타 광고 소재</div>', unsafe_allow_html=True)
-        cols = st.columns(2)
-        for slot, col in zip(["메타소재 1", "메타소재 2"], cols):
-            with col:
-                image_path, meta = slot_lookup(slot)
-                render_media_card(slot, meta, image_path, aspect_ratio="4/5")
+        # 최신순으로 최대 5개까지 수집되지만 그보다 적을 수 있다 — 실제로 이미지가 등록된 슬롯만큼만
+        # 카드를 그린다 (사용자 요청, 2026-10-19: 없는데 "미등록" 카드를 억지로 5개 채우지 않음).
+        meta_available = [slot for slot in META_SLOTS if slot_lookup(slot)[0] is not None]
+        if meta_available:
+            cols = st.columns(len(meta_available))
+            for slot, col in zip(meta_available, cols):
+                with col:
+                    image_path, meta = slot_lookup(slot)
+                    render_media_card(slot, meta, image_path, aspect_ratio="3/4")
+        else:
+            st.markdown(
+                '<div class="keyword-empty">아직 수집된 메타 소재가 없습니다.</div>',
+                unsafe_allow_html=True,
+            )
 
         with st.expander(f"{brand} 이미지 업로드/교체 — {view_date.isoformat()}"):
             for slot in COMPETITOR_SLOTS:
